@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 
 import * as db from './lib/db.js';
 import * as generate from './lib/generate.js';
-import * as mailtm from './providers/mailtm.js';
+import * as mail from './providers/index.js';
 import * as browser from './lib/browser.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,6 +72,13 @@ async function serveStatic(res, pathname) {
   }
 }
 
+// Why generation could not start, in the words of the provider you picked.
+function noDomainMessage(provider) {
+  return provider === 'domain'
+    ? 'Set your domain in Settings first (the catch-all domain your worker receives mail for).'
+    : 'No mail.tm domains are available right now. Try again shortly.';
+}
+
 // ---- API handlers ----------------------------------------------------------
 
 async function handleGenerate(req, res, q) {
@@ -81,6 +88,7 @@ async function handleGenerate(req, res, q) {
   const pwStyle = q.get('pwStyle') || 'strong';
   const settings = await db.getSettings();
   const provider = q.get('provider') || settings.provider || 'mail.tm';
+  const conf = { ...settings, provider };
   let domain = q.get('domain') || '';
 
   res.writeHead(200, {
@@ -103,11 +111,12 @@ async function handleGenerate(req, res, q) {
 
   try {
     if (!domain) {
-      const domains = await mailtm.getDomains(provider);
-      if (!domains.length) throw new Error('No mail.tm domains are available right now. Try again shortly.');
+      const domains = await mail.getDomains(conf);
+      if (!domains.length) throw new Error(noDomainMessage(provider));
       domain = domains[0];
     }
-    const throttleMs = clamp(Number(settings.throttleMs) || 500, 150, 5000);
+    // A catch-all domain accepts every address offline: nothing to rate-limit.
+    const throttleMs = provider === 'domain' ? 0 : clamp(Number(settings.throttleMs) || 500, 150, 5000);
     const existing = new Set((await db.read()).identities.map((i) => i.email.toLowerCase()));
 
     let created = 0;
@@ -124,7 +133,7 @@ async function handleGenerate(req, res, q) {
         if (existing.has(email)) continue;
         const password = generate.randomPassword(pwLen, pwStyle);
         try {
-          const accountId = await mailtm.createAccount(provider, email, password);
+          const accountId = await mail.createIdentity(conf, email, password);
           identity = {
             id: db.newId(),
             email,
@@ -186,9 +195,7 @@ async function handleInbox(res, id) {
   const identity = await db.getIdentity(id);
   if (!identity) return sendJson(res, 404, { error: 'Identity not found' });
   try {
-    const provider = identity.provider || 'mail.tm';
-    const token = await mailtm.getToken(provider, identity.email, identity.password);
-    const messages = await mailtm.listMessages(provider, token);
+    const messages = await mail.listMessages(await db.getSettings(), identity);
     sendJson(res, 200, { email: identity.email, messages });
   } catch (err) {
     sendJson(res, 502, { error: `Could not open inbox: ${err.message}` });
@@ -199,9 +206,7 @@ async function handleMessage(res, id, mid) {
   const identity = await db.getIdentity(id);
   if (!identity) return sendJson(res, 404, { error: 'Identity not found' });
   try {
-    const provider = identity.provider || 'mail.tm';
-    const token = await mailtm.getToken(provider, identity.email, identity.password);
-    const message = await mailtm.getMessage(provider, token, mid);
+    const message = await mail.getMessage(await db.getSettings(), identity, mid);
     sendJson(res, 200, { message });
   } catch (err) {
     sendJson(res, 502, { error: `Could not load message: ${err.message}` });
@@ -211,14 +216,13 @@ async function handleMessage(res, id, mid) {
 async function handleDelete(res, ids) {
   if (!Array.isArray(ids) || !ids.length) return sendJson(res, 400, { error: 'No ids provided' });
   await db.backup('pre-delete'); // snapshot before removing anything
+  const settings = await db.getSettings();
   let serverDeleted = 0;
   for (const id of ids) {
     const identity = await db.getIdentity(id);
     if (!identity) continue;
     try {
-      const provider = identity.provider || 'mail.tm';
-      const token = await mailtm.getToken(provider, identity.email, identity.password);
-      await mailtm.deleteAccount(provider, token, identity.accountId);
+      await mail.deleteIdentity(settings, identity);
       serverDeleted++;
     } catch {
       /* account may already be gone server-side; still remove it locally */
@@ -259,8 +263,9 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (pathname === '/api/domains' && req.method === 'GET') {
-      const provider = q.get('provider') || (await db.getSettings()).provider;
-      const domains = await mailtm.getDomains(provider);
+      const settings = await db.getSettings();
+      const provider = q.get('provider') || settings.provider;
+      const domains = await mail.getDomains({ ...settings, provider });
       return sendJson(res, 200, { domains });
     }
 
@@ -301,6 +306,9 @@ const server = http.createServer(async (req, res) => {
       if (body.provider) patch.provider = body.provider;
       if (body.throttleMs != null) patch.throttleMs = clamp(Number(body.throttleMs) || 500, 150, 5000);
       if (body.theme) patch.theme = body.theme;
+      if (body.domain !== undefined) patch.domain = String(body.domain || '').trim().toLowerCase();
+      if (body.mailApi !== undefined) patch.mailApi = String(body.mailApi || '').trim();
+      if (body.mailToken !== undefined) patch.mailToken = String(body.mailToken || '').trim();
       return sendJson(res, 200, await db.updateSettings(patch));
     }
 
