@@ -1,0 +1,15 @@
+{
+  "name": "bulbox-worker",
+  "private": true,
+  "description": "Catch-all inbox for one domain: Cloudflare Email Routing -> D1 -> HTTP.",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "postal-mime": "^2"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}
