@@ -52,6 +52,15 @@ export async function createIdentity(settings, email, password) {
     : mailtm.createAccount(settings.provider, email, password);
 }
 
+// Used by the Settings screen so a broken setup shows up before you generate 500
+// addresses against it.
+export async function checkConnection(settings) {
+  if (settings.provider !== 'domain') return `${settings.provider || 'mail.tm'} needs no setup.`;
+  await domain.checkConnection(settings);
+  const [d] = domain.getDomains(settings);
+  return `Worker answered — mail for @${d} will land here.`;
+}
+
 export async function listMessages(settings, identity) {
   const provider = providerOf(settings, identity);
   return provider === 'domain'

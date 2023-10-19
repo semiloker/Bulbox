@@ -50,6 +50,13 @@ export function createIdentity() {
   return null;
 }
 
+// Listing an address that will never exist: any 2xx proves the URL, the token
+// and the worker's D1 binding are all good, without touching real mail.
+export async function checkConnection(settings) {
+  const [domain = 'example.com'] = getDomains(settings);
+  await request(settings, `/messages?to=${encodeURIComponent(`__bulbox-probe@${domain}`)}`);
+}
+
 export function listMessages(settings, identity) {
   return request(settings, `/messages?to=${encodeURIComponent(identity.email)}`);
 }
