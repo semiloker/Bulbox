@@ -63,4 +63,21 @@ await assert.rejects(
 );
 assert.equal(calls.length, before, 'misconfigured provider must not hit the network');
 
+reply = { status: 200, body: [] };
+assert.match(
+  await mail.checkConnection(settings),
+  /example\.com/,
+  'a good probe names the domain it will receive for'
+);
+assert.match(
+  last().url,
+  /\/messages\?to=__bulbox-probe%40example\.com$/,
+  'probe cannot collide with real mail'
+);
+
+assert.equal(await mail.checkConnection({ provider: 'mail.tm' }), 'mail.tm needs no setup.');
+
+reply = { status: 401, body: {} };
+await assert.rejects(() => mail.checkConnection(settings), /rejected the API token/);
+
 console.log('ok');

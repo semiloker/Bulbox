@@ -164,6 +164,10 @@
             <label for="mailToken">Worker API token</label>
             <input id="mailToken" type="password" placeholder="the secret you set with wrangler secret put API_TOKEN" spellcheck="false" />
           </div>
+          <div class="field">
+            <button id="testMail"><svg class="ic"><use href="#i-check"/></svg>Test connection</button>
+            <small id="testMailResult">Checks the worker before you generate anything against it.</small>
+          </div>
         </div>
         <div class="field">
           <label for="throttle">Throttle between creates (ms)</label>
@@ -173,6 +177,7 @@
         <div class="field">
           <label class="switch-row"><input type="checkbox" id="torEnabled" /> <span>Route each email's browser through its own Tor exit IP</span></label>
           <small id="torStatus" class="tor-status">Tor: checking…</small>
+          <small>Tor exit IPs are published, so anti-fraud services know all of them. Great for privacy, but many sites refuse or ban signups made through one — independently of which email domain you use.</small>
         </div>
         <div class="field">
           <label for="torPath">Tor path (optional)</label>

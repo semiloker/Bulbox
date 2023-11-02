@@ -312,6 +312,16 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await db.updateSettings(patch));
     }
 
+    if (pathname === '/api/settings/test' && req.method === 'POST') {
+      const body = await readBody(req);
+      try {
+        const detail = await mail.checkConnection({ ...(await db.getSettings()), ...body });
+        return sendJson(res, 200, { ok: true, detail });
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, detail: err.message });
+      }
+    }
+
     if (pathname === '/api/export' && req.method === 'GET') {
       return handleExport(res);
     }

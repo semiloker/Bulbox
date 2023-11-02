@@ -32,6 +32,15 @@ function makeHttpApi() {
     saveSettings: (patch) =>
       fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }).then(json),
     getDomains: () => fetch('/api/domains').then(json).then((d) => d.domains || []),
+    testMail: async (patch) => {
+      const r = await fetch('/api/settings/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).then(json);
+      if (!r.ok) throw new Error(r.detail);
+      return r.detail;
+    },
     onGenerateProgress: (cb) => {
       progressCb = cb;
       return () => { progressCb = null; };
@@ -619,6 +628,21 @@ function updateProviderVisibility() {
   $('#domainFields').classList.toggle('hidden', $('#provider').value !== 'domain');
 }
 $('#provider').addEventListener('change', updateProviderVisibility);
+
+$('#testMail').addEventListener('click', async () => {
+  const out = $('#testMailResult');
+  out.textContent = 'Checking…';
+  try {
+    out.textContent = await api.testMail({
+      provider: $('#provider').value,
+      domain: $('#ownDomain').value,
+      mailApi: $('#mailApi').value,
+      mailToken: $('#mailToken').value,
+    });
+  } catch (e) {
+    out.textContent = e.message;
+  }
+});
 
 $('#saveSettings').addEventListener('click', async () => {
   try {

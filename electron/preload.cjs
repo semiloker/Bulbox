@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('forge', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
   getDomains: () => ipcRenderer.invoke('domains:get'),
+  testMail: (patch) => ipcRenderer.invoke('settings:test', patch),
 
   generate: (opts) => ipcRenderer.invoke('generate:run', opts),
   cancelGenerate: () => ipcRenderer.send('generate:cancel'),
