@@ -110,17 +110,26 @@ async function handleGenerate(req, res, q) {
   };
 
   try {
-    // Spread addresses over every domain the provider offers instead of burning
-    // one: a single domain across hundreds of signups is what gets blocklisted.
-    const pool = domain ? [domain] : await mail.getDomains(conf);
-    if (!pool.length) throw new Error(noDomainMessage(provider));
-    // A catch-all domain accepts every address offline: nothing to rate-limit.
-    const throttleMs = provider === 'domain' ? 0 : clamp(Number(settings.throttleMs) || 500, 150, 5000);
+    // Some backends hand out the address themselves; for the rest, spread over
+    // every domain they offer instead of burning one, which is what gets a
+    // domain blocklisted in the first place.
+    const assigned = mail.assignsAddresses(conf);
+    const pool = assigned ? [] : domain ? [domain] : await mail.getDomains(conf);
+    if (!assigned && !pool.length) throw new Error(noDomainMessage(provider));
+    const throttleMs = assigned
+      ? 5200 // 5minmail allows one new address every 5 seconds
+      : provider === 'domain'
+        ? 0 // a catch-all domain accepts every address offline: nothing to rate-limit
+        : clamp(Number(settings.throttleMs) || 500, 150, 5000);
     const existing = new Set((await db.read()).identities.map((i) => i.email.toLowerCase()));
 
     let created = 0;
     let failed = 0;
-    send('start', { total: count, domain: pool.length > 1 ? `${pool.length} domains` : pool[0], provider });
+    send('start', {
+      total: count,
+      domain: assigned ? provider : pool.length > 1 ? `${pool.length} domains` : pool[0],
+      provider,
+    });
 
     for (let i = 0; i < count && !aborted; i++) {
       const nickname = generate.randomNickname();
@@ -128,22 +137,26 @@ async function handleGenerate(req, res, q) {
       let lastErr = null;
 
       for (let attempt = 0; attempt < 6 && !aborted; attempt++) {
-        const email = `${generate.localPart(style, nickname)}@${pool[(i + attempt) % pool.length]}`.toLowerCase();
-        if (existing.has(email)) continue;
+        const wanted = assigned
+          ? ''
+          : `${generate.localPart(style, nickname)}@${pool[(i + attempt) % pool.length]}`.toLowerCase();
+        if (wanted && existing.has(wanted)) continue;
         const password = generate.randomPassword(pwLen, pwStyle);
         try {
-          const accountId = await mail.createIdentity(conf, email, password);
+          const made = await mail.createIdentity(conf, wanted, password);
+          if (existing.has(made.email)) continue;
           identity = {
             id: db.newId(),
-            email,
+            email: made.email,
             nickname,
             password,
             provider,
-            accountId,
+            accountId: made.accountId,
+            expiresAt: made.expiresAt || null,
             active: true,
             createdAt: new Date().toISOString(),
           };
-          existing.add(email);
+          existing.add(made.email);
           break;
         } catch (err) {
           lastErr = err;
