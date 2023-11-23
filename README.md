@@ -25,10 +25,19 @@ Switchable in **Settings**:
 | **mail.tm** | none | **1** (`emalupe.com`) | one long-burned domain — the most blocked option |
 | **mail.gw** | none | 5 | same operator, domains that read like real businesses |
 | **temp-mail.io** | none | 8 | biggest free pool; anyone who knows the address can read it |
+| **5minmail** | none | 1 (`zelnro.com`) | youngest domain, so the least blocked today — but see below |
 | **Own domain** | ~10 min | yours | permanent, not recognisable as throwaway |
 
 Generation spreads addresses across **every** domain a backend offers, round-robin, rather
 than burning one — pick a specific one in the Generate screen only if you need to.
+
+**5minmail is a special case.** It gets through where the others don't only because its
+single domain is new, and that is temporary by nature — it is `emalupe.com` a few months
+earlier. Three things come with it: the inbox dies after **~5 minutes**, the server picks
+the address so **handles and local-part styles are ignored** (everything looks like
+`u_9mq28cjb2c@`, a pattern that is itself easy to detect), and new addresses are rate
+limited to **one per 5 seconds**, so 100 of them take about eight minutes. Good for a
+signup where you read the code immediately; useless for an account you want to keep.
 
 No public temp-mail service is unblockable: their domains are on the same lists, and the
 only real difference is how well known each one is. If sites keep rejecting you, the fix is
@@ -140,6 +149,7 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 | `providers/index.js` | picks the backend per identity, hides mail.tm's tokens |
 | `providers/mailtm.js` | mail.tm / mail.gw API adapter |
 | `providers/tempmailio.js` | temp-mail.io API adapter (8 public domains) |
+| `providers/fiveminmail.js` | 5minmail adapter — assigns its own addresses, 5 min inboxes |
 | `providers/domain.js` | own-domain adapter — talks to the worker |
 | `worker/` | Cloudflare Email Worker + D1 schema (deployed separately) |
 | `lib/db.js` | atomic JSON storage + backups |
