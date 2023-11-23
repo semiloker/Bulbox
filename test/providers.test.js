@@ -126,4 +126,30 @@ assert.equal(last().method, 'DELETE');
 reply = { status: 400, body: { error: 'taken' } };
 await assert.rejects(() => mail.createIdentity(tmio, 'x@bltiwd.com', 'pw'), (e) => e.status === 422);
 
+
+// --- 5minmail -----------------------------------------------------------------
+const fmm = { provider: '5minmail' };
+
+reply = { status: 200, body: { email: 'U_ABC@zelnro.com', session_id: 'sess1', expires_in_minutes: 5 } };
+const made = await mail.createIdentity(fmm, 'ignored@whatever.com', 'pw');
+assert.equal(made.email, 'u_abc@zelnro.com', 'the server assigns the address, and it wins');
+assert.equal(made.accountId, 'sess1');
+assert.ok(Date.parse(made.expiresAt) > Date.now(), 'expiry is stored so a dead inbox is explainable');
+assert.equal(mail.assignsAddresses(fmm), true);
+assert.equal(mail.assignsAddresses({ provider: 'mail.tm' }), false);
+
+const box5 = { email: 'u_abc@zelnro.com', provider: '5minmail' };
+const raw = { sender: 'a@b.com', subject: 'Code', body: '<p>hi  there</p>', received_at: '2026-08-09T10:00:00Z' };
+reply = { status: 200, body: [raw] };
+const [m5] = await mail.listMessages(fmm, box5);
+assert.equal(m5.intro, 'hi there', 'tags stripped for the preview');
+const again = (await mail.listMessages(fmm, box5))[0];
+assert.equal(m5.id, again.id, 'ids are stable across polls, unlike an array index');
+assert.equal((await mail.getMessage(fmm, box5, m5.id)).html, '<p>hi  there</p>');
+
+reply = { status: 404, body: {} };
+await assert.rejects(() => mail.listMessages(fmm, box5), /expired/);
+reply = { status: 429, body: {} };
+await assert.rejects(() => mail.createIdentity(fmm, '', ''), /every 5 seconds/);
+
 console.log('ok');
