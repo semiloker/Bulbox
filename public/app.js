@@ -498,6 +498,7 @@ async function openBrowserPanel(id) {
   bwCurrentPass = it.password;
   bwPassShown = false;
   $('#browserEmail').textContent = it.email;
+  $('#bwCredNick').textContent = it.nickname || '—';
   $('#bwCredEmail').textContent = it.email;
   $('#bwCredPass').textContent = '••••••••';
   $('#bwRevealPass use').setAttribute('href', '#i-eye');
@@ -574,6 +575,7 @@ function closeBrowserDrawer() {
 $$('[data-close-browser]').forEach((el) => el.addEventListener('click', closeBrowserDrawer));
 
 // Credential copy/reveal — usable while the browser is open.
+$('#bwCopyNick').addEventListener('click', () => copy($('#bwCredNick').textContent));
 $('#bwCopyEmail').addEventListener('click', () => copy($('#bwCredEmail').textContent));
 $('#bwCopyPass').addEventListener('click', () => { if (bwCurrentPass) copy(bwCurrentPass); });
 $('#bwRevealPass').addEventListener('click', () => {
