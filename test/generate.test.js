@@ -7,7 +7,8 @@ assert.equal(slugify('---'), 'user', 'empty slug falls back');
 
 for (let i = 0; i < 500; i++) {
   const nick = randomNickname();
-  assert.match(nick, /^[a-zA-Z0-9._-]{1,20}$/, `bad nickname: ${nick}`);
+  assert.match(nick, /^[a-zA-Z0-9.-]{1,20}$/, `bad nickname: ${nick}`);
+  assert.ok(!nick.includes('_'), `handles must not contain underscores: ${nick}`);
 
   for (const style of ['word', 'random', 'nickname']) {
     const lp = localPart(style, nick);
