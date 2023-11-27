@@ -1,6 +1,6 @@
 // Self-check for the generators: node test/generate.test.js
 import assert from 'node:assert/strict';
-import { slugify, randomNickname, localPart, randomPassword } from '../lib/generate.js';
+import { slugify, randomNickname, localPart, randomPassword, cleanNickname } from '../lib/generate.js';
 
 assert.equal(slugify('Neon Raven!'), 'neonraven');
 assert.equal(slugify('---'), 'user', 'empty slug falls back');
@@ -27,5 +27,15 @@ for (let i = 0; i < 500; i++) {
   assert.match(randomPassword(20, 'alnum'), /^[a-zA-Z0-9]{20}$/);
   assert.ok(randomPassword(16, 'memorable').length >= 16);
 }
+
+
+// A handle the user typed by hand keeps their characters — we only tidy it.
+assert.equal(cleanNickname('  My Cool  Handle '), 'My Cool Handle');
+assert.equal(cleanNickname('shadowsniper'), 'shadowsniper', 'letters must survive');
+assert.equal(cleanNickname('a	b'), 'a b');
+assert.equal(cleanNickname('ok' + String.fromCharCode(0) + 'go'), 'ok go', 'control chars become a space');
+assert.equal(cleanNickname('x'.repeat(60)).length, 40, 'length is capped');
+assert.equal(cleanNickname('   '), '', 'blank is rejected by the callers');
+assert.equal(cleanNickname('Привіт-світ'), 'Привіт-світ', 'non-latin handles are fine');
 
 console.log('ok');
