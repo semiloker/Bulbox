@@ -531,13 +531,17 @@ async function openBrowserPanel(id) {
   const sync = () => { try { addr.value = wv.getURL(); } catch {} };
   wv.addEventListener('did-navigate', sync);
   wv.addEventListener('did-navigate-in-page', sync);
-  wv.addEventListener('dom-ready', focusBrowser);
+  wv.addEventListener('dom-ready', focusBrowser, { once: true });
 }
 
 // Hiding the drawer takes the webview through display:none, which detaches the
 // guest. On the way back clicks land but keystrokes go nowhere until the guest
 // is focused again — so focus it explicitly whenever the panel is shown.
 function focusBrowser() {
+  // Never take focus off something the user is typing into — the address bar and
+  // the app's own fields must win over the page inside the panel.
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
   try { if (bwWebview) bwWebview.focus(); } catch {}
 }
 
