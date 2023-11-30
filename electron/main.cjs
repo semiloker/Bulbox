@@ -277,6 +277,15 @@ function registerIpc() {
     return { created, failed, aborted };
   });
 
+  ipcMain.handle('db:rename', async (_e, { id, nickname }) => {
+    const { db, generate } = await loadLibs();
+    const clean = generate.cleanNickname(nickname);
+    if (!clean) throw new Error('A handle cannot be empty.');
+    const identity = await db.renameIdentity(id, clean);
+    if (!identity) throw new Error('Identity not found');
+    return { id, nickname: clean };
+  });
+
   ipcMain.handle('db:delete', async (_e, ids) => {
     const { db, mail } = await loadLibs();
     if (!Array.isArray(ids) || !ids.length) return { removed: 0, serverDeleted: 0 };
