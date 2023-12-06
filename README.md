@@ -85,6 +85,9 @@ on the blocklists. The domain buys you a clean start, not immunity.
   with a **persistent session unique to that email**. Sign in to a site as that identity and the
   cookies are saved and isolated per email. Deleting the row wipes its saved browser data.
 - **Password** — the inbox's real login, generated for you and stored so you keep it.
+- **Fill** — puts this identity's handle, email and password into the login form on the page
+  you are looking at. It fills and stops; submitting stays your call. Sessions are already
+  persistent, so this is for the first sign-in, not for every visit.
 
 **Generate** makes up to 500 at a time with a live progress bar, auto-throttling and retrying to
 respect mail.tm's rate limit (~8 requests/second).
