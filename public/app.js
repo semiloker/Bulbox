@@ -701,6 +701,156 @@ async function bwFill() {
 }
 $('#bwFill').addEventListener('click', bwFill);
 
+// ---------- avatars ----------
+// Drawn here, on a canvas, from the identity's handle. No network call and no
+// third-party image, so every identity gets its own picture that is unmistakably
+// generated rather than some real person's photo.
+
+function hash32(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h;
+}
+
+// A tiny deterministic PRNG so one seed always paints the same avatar.
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function paintAvatar(canvas, seed, style) {
+  const g = canvas.getContext('2d');
+  const S = canvas.width;
+  const h = hash32(seed);
+  const next = rng(h);
+  const hue = h % 360;
+  const ink = 'hsl(' + hue + ' 62% 52%)';
+  const ink2 = 'hsl(' + ((hue + 40) % 360) + ' 62% 44%)';
+
+  g.fillStyle = 'hsl(' + hue + ' 30% 96%)';
+  g.fillRect(0, 0, S, S);
+
+  if (style === 0) {
+    // GitHub-style identicon: a 5x5 grid mirrored down the middle.
+    const cells = 5;
+    const pad = S * 0.1;
+    const size = (S - pad * 2) / cells;
+    g.fillStyle = ink;
+    for (let col = 0; col < 3; col++) {
+      for (let row = 0; row < cells; row++) {
+        if (next() > 0.5) continue;
+        g.fillRect(pad + col * size, pad + row * size, size, size);
+        g.fillRect(pad + (cells - 1 - col) * size, pad + row * size, size, size);
+      }
+    }
+  } else if (style === 1) {
+    // Concentric arcs, each one a slice of the seed.
+    for (let i = 5; i > 0; i--) {
+      g.beginPath();
+      g.fillStyle = i % 2 ? ink : ink2;
+      g.globalAlpha = 0.35 + i * 0.12;
+      const r = (S / 2) * (i / 5);
+      const from = next() * Math.PI * 2;
+      g.moveTo(S / 2, S / 2);
+      g.arc(S / 2, S / 2, r, from, from + Math.PI * (0.8 + next()));
+      g.fill();
+    }
+    g.globalAlpha = 1;
+  } else {
+    // Initials on a solid tile.
+    g.fillStyle = ink;
+    g.fillRect(0, 0, S, S);
+    const letters = seed.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || '?';
+    g.fillStyle = '#fff';
+    g.font = 'bold ' + Math.round(S * 0.42) + 'px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(letters, S / 2, S / 2 + S * 0.03);
+  }
+  return canvas;
+}
+
+let avatarSalt = 0;
+
+function avatarSeeds() {
+  const it = state.identities.find((i) => i.id === bwCurrentId);
+  const base = (it && (it.nickname || it.email)) || 'bulbox';
+  return Array.from({ length: 12 }, (_, i) => base + '#' + (avatarSalt * 12 + i));
+}
+
+function renderAvatarGrid() {
+  const grid = $('#avatarGrid');
+  grid.innerHTML = '';
+  avatarSeeds().forEach((seed, i) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 240;
+    c.className = 'avatar-tile';
+    c.title = 'Use this one';
+    paintAvatar(c, seed, i % 3);
+    c.addEventListener('click', () => useAvatar(c));
+    grid.appendChild(c);
+  });
+}
+
+function openAvatarPicker() {
+  if (!bwCurrentId) return toast('Open an email browser first', false);
+  renderAvatarGrid();
+  $('#avatarModal').classList.remove('hidden');
+}
+function closeAvatarPicker() {
+  $('#avatarModal').classList.add('hidden');
+}
+
+// Runs inside the page: turns the PNG into a File and drops it into the upload
+// input, exactly as if it had been chosen in the file dialog.
+function putFileInPage(base64, name) {
+  const input = Array.from(document.querySelectorAll('input[type="file"]')).find(
+    (el) => !el.disabled && (!el.accept || el.accept.includes('image') || el.accept === '*/*')
+  );
+  if (!input) return 0;
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const file = new File([bytes], name, { type: 'image/png' });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  return 1;
+}
+
+async function useAvatar(canvas) {
+  if (!bwWebview) return;
+  const base64 = canvas.toDataURL('image/png').split(',')[1];
+  try {
+    const n = await bwWebview.executeJavaScript(
+      '(' + putFileInPage.toString() + ')(' + JSON.stringify(base64) + ', "avatar.png")'
+    );
+    if (n) {
+      toast('Avatar dropped into the upload field');
+      closeAvatarPicker();
+    } else {
+      toast('No image upload field on this page', false);
+    }
+  } catch {
+    toast('This page would not accept the file', false);
+  }
+}
+
+$('#bwAvatar').addEventListener('click', openAvatarPicker);
+$('#avatarShuffle').addEventListener('click', () => {
+  avatarSalt++;
+  renderAvatarGrid();
+});
+$$('[data-close-avatar]').forEach((el) => el.addEventListener('click', closeAvatarPicker));
+
 function bwNavigate() {
   const u = normalizeUrl($('#bwAddr').value);
   if (u && bwWebview) try { bwWebview.loadURL(u); } catch {}
