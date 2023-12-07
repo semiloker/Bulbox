@@ -809,7 +809,7 @@ function closeAvatarPicker() {
 
 // Runs inside the page: turns the PNG into a File and drops it into the upload
 // input, exactly as if it had been chosen in the file dialog.
-function putFileInPage(base64, name) {
+function putFileInPage(base64, name, type) {
   const input = Array.from(document.querySelectorAll('input[type="file"]')).find(
     (el) => !el.disabled && (!el.accept || el.accept.includes('image') || el.accept === '*/*')
   );
@@ -817,7 +817,7 @@ function putFileInPage(base64, name) {
   const bin = atob(base64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const file = new File([bytes], name, { type: 'image/png' });
+  const file = new File([bytes], name, { type: type || 'image/png' });
   const dt = new DataTransfer();
   dt.items.add(file);
   input.files = dt.files;
@@ -831,7 +831,7 @@ async function useAvatar(canvas) {
   const base64 = canvas.toDataURL('image/png').split(',')[1];
   try {
     const n = await bwWebview.executeJavaScript(
-      '(' + putFileInPage.toString() + ')(' + JSON.stringify(base64) + ', "avatar.png")'
+      '(' + putFileInPage.toString() + ')(' + JSON.stringify(base64) + ', "avatar.png", "image/png")'
     );
     if (n) {
       toast('Avatar dropped into the upload field');
@@ -850,6 +850,64 @@ $('#avatarShuffle').addEventListener('click', () => {
   renderAvatarGrid();
 });
 $$('[data-close-avatar]').forEach((el) => el.addEventListener('click', closeAvatarPicker));
+
+// One picture the user pointed at, from a link or from disk. Nothing is crawled
+// and nothing is stored — it goes straight into the page's upload field.
+function avatarNote(msg, ok) {
+  const el = $('#avatarOwnNote');
+  el.textContent = msg;
+  el.classList.toggle('bad', ok === false);
+}
+
+const IMG_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+
+async function useImageBytes(base64, type) {
+  if (!bwWebview) return;
+  const name = 'avatar.' + (IMG_EXT[type] || 'png');
+  try {
+    const n = await bwWebview.executeJavaScript(
+      '(' + putFileInPage.toString() + ')(' +
+        JSON.stringify(base64) + ', ' + JSON.stringify(name) + ', ' + JSON.stringify(type) + ')'
+    );
+    if (n) {
+      toast('Picture dropped into the upload field');
+      closeAvatarPicker();
+    } else {
+      avatarNote('No image upload field on this page.', false);
+    }
+  } catch {
+    avatarNote('This page would not accept the file.', false);
+  }
+}
+
+async function useAvatarUrl() {
+  const url = $('#avatarUrl').value.trim();
+  if (!url) return;
+  if (!IS_APP || !api.fetchImage) return avatarNote('Links only work in the desktop app.', false);
+  avatarNote('Loading…');
+  try {
+    const img = await api.fetchImage(url);
+    await useImageBytes(img.base64, img.type);
+  } catch (e) {
+    avatarNote(e.message || 'Could not load that image.', false);
+  }
+}
+
+$('#avatarUrlGo').addEventListener('click', useAvatarUrl);
+$('#avatarUrl').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') useAvatarUrl();
+});
+$('#avatarFileBtn').addEventListener('click', () => $('#avatarFile').click());
+$('#avatarFile').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) return avatarNote('That file is larger than 5 MB.', false);
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+  await useImageBytes(btoa(bin), file.type || 'image/png');
+});
 
 function bwNavigate() {
   const u = normalizeUrl($('#bwAddr').value);

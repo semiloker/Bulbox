@@ -277,6 +277,41 @@ function registerIpc() {
     return { created, failed, aborted };
   });
 
+  // Downloads a single image the user chose. Runs here rather than in the
+  // renderer so the page's CORS rules don't apply, and it fetches exactly the one
+  // URL it is given — nothing crawls, nothing follows links.
+  ipcMain.handle('avatar:fetch', async (_e, url) => {
+    let parsed;
+    try {
+      parsed = new URL(String(url).trim());
+    } catch {
+      throw new Error('That is not a valid link.');
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error('Only http(s) links are supported.');
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    let res;
+    try {
+      res = await fetch(parsed.href, { signal: controller.signal, redirect: 'follow' });
+    } catch (err) {
+      throw new Error(`Could not load that image: ${err.message}`);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) throw new Error(`The server answered ${res.status} for that link.`);
+
+    const type = (res.headers.get('content-type') || '').split(';')[0].trim();
+    if (!type.startsWith('image/')) {
+      throw new Error(`That link is ${type || 'not an image'} — open the image itself and copy its address.`);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > 5 * 1024 * 1024) throw new Error('That image is larger than 5 MB.');
+    return { base64: buf.toString('base64'), type };
+  });
+
   ipcMain.handle('db:rename', async (_e, { id, nickname }) => {
     const { db, generate } = await loadLibs();
     const clean = generate.cleanNickname(nickname);

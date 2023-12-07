@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('forge', {
 
   deleteIdentities: (ids) => ipcRenderer.invoke('db:delete', ids),
   renameIdentity: (id, nickname) => ipcRenderer.invoke('db:rename', { id, nickname }),
+  fetchImage: (url) => ipcRenderer.invoke('avatar:fetch', url),
   openInbox: (id) => ipcRenderer.invoke('inbox:open', id),
   openMessage: (id, mid) => ipcRenderer.invoke('message:open', { id, mid }),
   openBrowser: (id) => ipcRenderer.invoke('browser:open', id),

@@ -88,6 +88,9 @@ on the blocklists. The domain buys you a clean start, not immunity.
 - **Avatar** — a grid of avatars drawn from this identity's handle (identicon, arcs or
   initials); click one and it lands in the page's image upload field as a real PNG file.
   Generated locally, so no third-party image and no real person's face.
+  You can also point it at a picture you chose yourself: paste an image link or pick a file
+  from disk (5 MB cap, image content types only). It fetches exactly the one URL you give it
+  — there is no crawler here, and whether you may use a given picture is on you.
 - **Fill** — puts this identity's handle, email and password into the login form on the page
   you are looking at. It fills and stops; submitting stays your call. Sessions are already
   persistent, so this is for the first sign-in, not for every visit.

@@ -251,6 +251,15 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   border: 2px solid transparent; transition: .15s ease; background: var(--surface);
 }
 .avatar-tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+.avatar-own { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.avatar-own label { display: block; font-size: 12px; color: var(--faint); margin-bottom: 6px; }
+.avatar-own-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.avatar-own-row input[type="text"] {
+  flex: 1; min-width: 220px; font: inherit; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
+}
+#avatarOwnNote { display: block; margin-top: 8px; color: var(--faint); font-size: 12px; }
+#avatarOwnNote.bad { color: var(--danger, #e5484d); }
 .nick-edit {
   font: inherit; font-family: var(--mono); width: 100%; max-width: 220px;
   padding: 2px 6px; border: 1px solid var(--accent); border-radius: 6px;
