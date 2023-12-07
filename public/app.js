@@ -951,6 +951,7 @@ async function loadSettings() {
     $('#torBridges').value = s.torBridges || '';
     applyTheme(s.theme || 'system');
   } catch {}
+  showHomeFolder();
   updateProviderVisibility();
   updateBridgeVisibility();
   refreshTransports();
@@ -975,6 +976,22 @@ $('#testMail').addEventListener('click', async () => {
     });
   } catch (e) {
     out.textContent = e.message;
+  }
+});
+
+// Desktop only: the web server has no single folder to point at.
+async function showHomeFolder() {
+  if (!IS_APP || !api.getHome) return;
+  try {
+    $('#homePath').value = await api.getHome();
+    $('#homeField').classList.remove('hidden');
+  } catch {}
+}
+$('#openHome').addEventListener('click', async () => {
+  try {
+    await api.openHome();
+  } catch (e) {
+    toast(e.message || 'Could not open the folder', false);
   }
 });
 

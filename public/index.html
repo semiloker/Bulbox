@@ -200,6 +200,14 @@
           <textarea id="torBridges" rows="4" spellcheck="false" placeholder="obfs4 1.2.3.4:443 FINGERPRINT cert=… iat-mode=0&#10;obfs4 5.6.7.8:9001 …"></textarea>
           <small>One bridge per line (obfs4 / webtunnel / meek). Get fresh ones from Tor Browser → Settings → Connection → Bridges, or Telegram <b>@GetBridgesBot</b>, or email <b>bridges@torproject.org</b> with <code>get transport obfs4</code>.</small>
         </div>
+        <div class="field hidden" id="homeField">
+          <label>Data folder</label>
+          <div class="avatar-own-row">
+            <input id="homePath" type="text" readonly spellcheck="false" />
+            <button class="icon-btn" id="openHome"><svg class="ic"><use href="#i-globe"/></svg>Open</button>
+          </div>
+          <small>Your database, the per-email browser sessions and Tor's data all live here. Copy this folder to move everything to another machine.</small>
+        </div>
         <button class="primary" id="saveSettings"><svg class="ic"><use href="#i-check"/></svg>Save</button>
         <div class="note">
           <b>Heads up:</b> these inboxes are <b>receive-only</b> and semi-temporary (great for

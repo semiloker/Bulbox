@@ -2,13 +2,90 @@
 // Wires the framework-agnostic lib modules (db, generate, providers) to IPC handlers,
 // and opens a persistent, isolated Chromium window per email.
 
-const { app, BrowserWindow, ipcMain, dialog, session, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 
 const ROOT = path.join(__dirname, '..');
 const HOME_URL = 'https://www.google.com';
+
+// --- where everything this app stores lives ---------------------------------
+// One visible folder holding the database, the per-email browser sessions and
+// Tor's data, so it can be found, backed up or carried to another machine.
+//   BULBOX_HOME              explicit override (a USB stick, say)
+//   PORTABLE_EXECUTABLE_DIR  set by the portable .exe — keep data beside it
+//   userData                 installed build; Program Files is not writable
+function resolveHome() {
+  const explicit = process.env.BULBOX_HOME || process.env.PORTABLE_EXECUTABLE_DIR;
+  if (explicit) return path.join(path.resolve(explicit), 'Bulbox');
+  return app.getPath('userData');
+}
+
+// Did the caller send storage somewhere throwaway? Read before we set BULBOX_DATA
+// ourselves below — the destructive smoke harness refuses to run without this.
+const STORAGE_WAS_REDIRECTED = !!(process.env.INBOX_FORGE_DATA || process.env.BULBOX_HOME);
+
+const LEGACY_USER_DATA = app.getPath('userData'); // must be read before setPath below
+const HOME = resolveHome();
+
+// A data directory handed to us on the command line wins over the home folder.
+// Without this the app would overwrite the caller's BULBOX_DATA/INBOX_FORGE_DATA
+// with its own value, and a run meant to be isolated would hit the real database.
+const DATA_OVERRIDE = process.env.BULBOX_DATA || process.env.INBOX_FORGE_DATA;
+const DATA_DIR = DATA_OVERRIDE ? path.resolve(DATA_OVERRIDE) : path.join(HOME, 'data');
+const TOR_DIR = path.join(HOME, 'tor');
+
+// Earlier builds kept the database beside the source tree and the per-email
+// sessions loose in userData. Move them in once, so an upgrade doesn't look like
+// "all my identities and logins are gone". Runs only while the new layout is
+// still empty, and never touches anything it has already moved.
+function migrateOldLayout() {
+  // Only for the default home. A portable or BULBOX_HOME folder is a deliberate
+  // fresh location — pulling the old userData into it would move data the user
+  // never asked to move, out of a folder they still expect to be intact.
+  if (HOME !== LEGACY_USER_DATA || DATA_OVERRIDE) return;
+
+  const sessions = path.join(HOME, 'sessions');
+  try {
+    const looksLikeOldSessions =
+      fs.existsSync(path.join(LEGACY_USER_DATA, 'Local State')) ||
+      fs.existsSync(path.join(LEGACY_USER_DATA, 'Partitions'));
+    if (!fs.existsSync(sessions) && looksLikeOldSessions) {
+      fs.mkdirSync(sessions, { recursive: true });
+      for (const entry of fs.readdirSync(LEGACY_USER_DATA)) {
+        if (entry === 'sessions' || entry === 'data' || entry === 'tor') continue;
+        try {
+          fs.renameSync(path.join(LEGACY_USER_DATA, entry), path.join(sessions, entry));
+        } catch {
+          /* a locked file stays where it is; the rest still moves */
+        }
+      }
+    }
+  } catch {
+    /* migration is best-effort — never block startup over it */
+  }
+
+  try {
+    const from = path.join(ROOT, 'data', 'emails.json');
+    const to = path.join(DATA_DIR, 'emails.json');
+    if (fs.existsSync(from) && !fs.existsSync(to)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.copyFileSync(from, to); // copied, not moved: the original stays as a fallback
+    }
+  } catch {
+    /* same */
+  }
+}
+
+migrateOldLayout();
+
+// Both must happen before anything reads them: setPath before the app is ready,
+// and the env var before loadLibs() imports lib/db.js and lib/browser.js, which
+// resolve their data directory at import time.
+app.setPath('userData', path.join(HOME, 'sessions'));
+process.env.BULBOX_DATA = DATA_DIR;
+fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -86,6 +163,14 @@ function registerIpc() {
 
   ipcMain.handle('settings:get', async () => (await loadLibs()).db.getSettings());
 
+  // The point of the portable layout is that you can find the folder.
+  ipcMain.handle('home:get', async () => HOME);
+  ipcMain.handle('home:open', async () => {
+    const err = await shell.openPath(HOME);
+    if (err) throw new Error(err);
+    return { opened: true };
+  });
+
   ipcMain.handle('settings:save', async (_e, patch = {}) => {
     const { db } = await loadLibs();
     const p = {};
@@ -115,7 +200,7 @@ function registerIpc() {
     }
     const st = await tor.ensureStarted({
       torPath: s.torPath || undefined,
-      dataDir: path.join(app.getPath('userData'), 'tor'),
+      dataDir: TOR_DIR,
       bridges: bridgeArg(s),
     });
     if (!st.bootstrapped) {
@@ -136,7 +221,7 @@ function registerIpc() {
     const s = await db.getSettings();
     return tor.ensureStarted({
       torPath: s.torPath || undefined,
-      dataDir: path.join(app.getPath('userData'), 'tor'),
+      dataDir: TOR_DIR,
       bridges: bridgeArg(s),
     });
   });
@@ -403,6 +488,19 @@ app.on('web-contents-created', (_e, contents) => {
 // Enabled only with INBOX_FORGE_SMOKE=1 (used for automated verification); no-op otherwise.
 async function runSmoke() {
   const outPath = process.env.INBOX_FORGE_SMOKE_OUT;
+
+  // This harness generates an address and then deletes *every* identity, so it
+  // must never be pointed at a real database. Refuse unless the caller explicitly
+  // redirected storage somewhere throwaway.
+  if (!STORAGE_WAS_REDIRECTED) {
+    const msg =
+      'Refusing to run the smoke test against the default data folder — set ' +
+      'INBOX_FORGE_DATA or BULBOX_HOME to a throwaway directory first.';
+    if (outPath) fs.writeFileSync(outPath, JSON.stringify({ error: msg }));
+    console.error(msg);
+    return app.exit(1);
+  }
+
   try {
     await new Promise((res) => {
       if (mainWindow.webContents.isLoadingMainFrame()) mainWindow.webContents.once('did-finish-load', res);

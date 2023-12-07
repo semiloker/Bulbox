@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "license": "MIT",
-  "description": "Desktop app to generate and manage 100+ real mail.tm inboxes (handle + address + password), each with its own in-app Chromium browser session.",
+  "description": "Desktop app to generate and manage 100+ real email inboxes (handle + address + password), each with its own isolated in-app browser session and Tor exit IP.",
   "type": "module",
   "main": "electron/main.cjs",
   "engines": {
@@ -12,9 +12,60 @@
   "scripts": {
     "start": "electron .",
     "web": "node server.js",
-    "test": "node test/generate.test.js && node test/db.test.js && node test/providers.test.js"
+    "test": "node test/generate.test.js && node test/db.test.js && node test/providers.test.js",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir",
+    "icon": "electron scripts/make-icon.cjs"
   },
   "devDependencies": {
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.semiloker.bulbox",
+    "productName": "Bulbox",
+    "copyright": "Copyright (c) 2026 Andrew (semiloker)",
+    "asar": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "lib/**/*",
+      "providers/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Bulbox",
+      "artifactName": "Bulbox-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Bulbox-portable-${version}.exe"
+    }
+  },
+  "overrides": {
+    "@noble/hashes": "^1.8.0"
   }
 }

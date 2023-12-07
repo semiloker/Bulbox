@@ -5,6 +5,33 @@ inbox gets a **handle** (github/gamer-style nickname), an **address**, its own *
 and a **dedicated in-app browser** with an isolated, persistent session that can route through its
 **own Tor exit IP**. Data lives in a plain JSON file (`data/emails.json`).
 
+## Install it
+
+Prebuilt Windows binaries come out of `npm run dist` into `dist/`:
+
+- **Bulbox-Setup-<version>.exe** — a per-user installer (no admin rights, you can pick the folder).
+- **Bulbox-portable-<version>.exe** — a single file that keeps its data next to itself.
+
+The build is **unsigned**, so Windows SmartScreen warns the first time: *More info → Run anyway*.
+Signing needs a paid certificate and is not worth it for a personal tool.
+
+### Where your data lives
+
+Everything the app stores sits under one folder — shown in **Settings → Data folder**, with a
+button that opens it:
+
+```
+<home>/
+  data/       emails.json, backups/, profiles/
+  sessions/   per-email cookies and logins
+  tor/        Tor's data directory
+```
+
+`<home>` is the folder beside the **portable** .exe, or a per-user folder for the installed
+build (an installed app cannot write to Program Files). Set `BULBOX_HOME` to override it —
+point it at a USB stick and the whole setup travels with you. Copying the folder to another
+machine carries the identities *and* the logged-in sessions.
+
 ## Run it
 
 ```bash
