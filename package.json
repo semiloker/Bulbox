@@ -1,6 +1,6 @@
 {
   "name": "bulbox",
-  "version": "2.0.0",
+  "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "description": "Desktop app to generate and manage 100+ real email inboxes (handle + address + password), each with its own isolated in-app browser session and Tor exit IP.",
@@ -35,7 +35,8 @@
       "lib/**/*",
       "providers/**/*",
       "public/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*"
     ],
     "win": {
       "icon": "build/icon.ico",
@@ -63,9 +64,19 @@
     },
     "portable": {
       "artifactName": "Bulbox-portable-${version}.exe"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "semiloker",
+        "repo": "Bulbox"
+      }
+    ]
   },
   "overrides": {
     "@noble/hashes": "^1.8.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

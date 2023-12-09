@@ -25,8 +25,8 @@
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-mark"><svg class="ic"><use href="#i-bolt"/></svg></div>
-      <div class="brand-name">Inbox&nbsp;Forge</div>
+      <canvas class="brand-mark" id="brandMark" width="64" height="64" aria-hidden="true"></canvas>
+      <div class="brand-name">Bulbox</div>
     </div>
 
     <nav class="nav">
@@ -199,6 +199,15 @@
           <label for="torBridges">Bridge lines</label>
           <textarea id="torBridges" rows="4" spellcheck="false" placeholder="obfs4 1.2.3.4:443 FINGERPRINT cert=… iat-mode=0&#10;obfs4 5.6.7.8:9001 …"></textarea>
           <small>One bridge per line (obfs4 / webtunnel / meek). Get fresh ones from Tor Browser → Settings → Connection → Bridges, or Telegram <b>@GetBridgesBot</b>, or email <b>bridges@torproject.org</b> with <code>get transport obfs4</code>.</small>
+        </div>
+        <div class="field hidden" id="updateField">
+          <label>Version</label>
+          <div class="avatar-own-row">
+            <input id="appVersion" type="text" readonly spellcheck="false" />
+            <button class="icon-btn" id="checkUpdate"><svg class="ic"><use href="#i-refresh"/></svg>Check for updates</button>
+            <button class="icon-btn hidden" id="restartUpdate"><svg class="ic"><use href="#i-check"/></svg>Restart &amp; install</button>
+          </div>
+          <small id="updateNote"></small>
         </div>
         <div class="field hidden" id="homeField">
           <label>Data folder</label>

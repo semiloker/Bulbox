@@ -7,6 +7,14 @@ contextBridge.exposeInMainWorld('forge', {
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
   getDomains: () => ipcRenderer.invoke('domains:get'),
   getHome: () => ipcRenderer.invoke('home:get'),
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateState: (cb) => {
+    const listener = (_e, data) => cb(data);
+    ipcRenderer.on('update:state', listener);
+    return () => ipcRenderer.removeListener('update:state', listener);
+  },
   openHome: () => ipcRenderer.invoke('home:open'),
   testMail: (patch) => ipcRenderer.invoke('settings:test', patch),
 
