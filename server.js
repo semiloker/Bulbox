@@ -308,6 +308,30 @@ const server = http.createServer(async (req, res) => {
       return handleOpenBrowser(res, body.id);
     }
 
+    if (pathname === '/api/categories' && req.method === 'POST') {
+      const body = await readBody(req);
+      try {
+        return sendJson(res, 200, { categories: await db.upsertCategory(body) });
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
+    }
+
+    if (pathname === '/api/categories/remove' && req.method === 'POST') {
+      const { id } = await readBody(req);
+      return sendJson(res, 200, await db.removeCategory(id));
+    }
+
+    if (pathname === '/api/assign' && req.method === 'POST') {
+      const { ids, categoryId } = await readBody(req);
+      if (!Array.isArray(ids) || !ids.length) return sendJson(res, 400, { error: 'No ids provided' });
+      try {
+        return sendJson(res, 200, await db.assignCategory(ids, categoryId || null));
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
+    }
+
     if (pathname === '/api/rename' && req.method === 'POST') {
       const { id, nickname } = await readBody(req);
       const clean = generate.cleanNickname(nickname);

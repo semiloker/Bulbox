@@ -484,6 +484,22 @@ function registerIpc() {
     return { id, nickname: clean };
   });
 
+  ipcMain.handle('categories:upsert', async (_e, cat = {}) => {
+    const { db } = await loadLibs();
+    return db.upsertCategory(cat);
+  });
+
+  ipcMain.handle('categories:remove', async (_e, id) => {
+    const { db } = await loadLibs();
+    return db.removeCategory(id);
+  });
+
+  ipcMain.handle('categories:assign', async (_e, { ids, categoryId }) => {
+    const { db } = await loadLibs();
+    if (!Array.isArray(ids) || !ids.length) return { changed: 0 };
+    return db.assignCategory(ids, categoryId || null);
+  });
+
   ipcMain.handle('db:delete', async (_e, ids) => {
     const { db, mail } = await loadLibs();
     if (!Array.isArray(ids) || !ids.length) return { removed: 0, serverDeleted: 0 };
