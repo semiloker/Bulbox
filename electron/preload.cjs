@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('forge', {
   },
 
   deleteIdentities: (ids) => ipcRenderer.invoke('db:delete', ids),
+  upsertCategory: (cat) => ipcRenderer.invoke('categories:upsert', cat),
+  removeCategory: (id) => ipcRenderer.invoke('categories:remove', id),
+  assignCategory: (ids, categoryId) => ipcRenderer.invoke('categories:assign', { ids, categoryId }),
   renameIdentity: (id, nickname) => ipcRenderer.invoke('db:rename', { id, nickname }),
   fetchImage: (url) => ipcRenderer.invoke('avatar:fetch', url),
   openInbox: (id) => ipcRenderer.invoke('inbox:open', id),

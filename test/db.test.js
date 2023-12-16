@@ -40,7 +40,11 @@ try {
 
   // A corrupt file must not throw — read() falls back to the defaults.
   await fs.writeFile(db.dbPath(), '{ not json', 'utf8');
-  assert.deepEqual(await db.read(), { settings: { provider: 'mail.tm', throttleMs: 500, theme: 'system' }, identities: [] });
+  assert.deepEqual(await db.read(), {
+    settings: { provider: 'mail.tm', throttleMs: 500, theme: 'system' },
+    identities: [],
+    categories: [],
+  });
 
   console.log('ok');
 } finally {
