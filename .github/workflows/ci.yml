@@ -29,6 +29,8 @@ jobs:
         run: node test/db.test.js
       - name: providers
         run: node test/providers.test.js
+      - name: categories
+        run: node test/categories.test.js
 
   # Every entry point must at least parse. Cheap, and it catches the class of
   # mistake where a patch lands broken syntax in a file no test imports.
