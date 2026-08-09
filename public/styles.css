@@ -235,6 +235,22 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .drawer-body { flex: 1; display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
 .msg-list { border-right: 1px solid var(--border); overflow-y: auto; background: var(--surface); }
 .msg-item { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.avatar-modal { position: absolute; inset: 0; z-index: 50; }
+.avatar-backdrop { position: absolute; inset: 0; background: rgba(10, 12, 20, .55); }
+.avatar-panel {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(560px, 92%); max-height: 84%; overflow: auto; padding: 16px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
+}
+.avatar-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.avatar-head .sub { color: var(--faint); font-size: 12px; }
+.avatar-head .spacer { flex: 1; }
+.avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.avatar-tile {
+  width: 100%; height: auto; aspect-ratio: 1; border-radius: 12px; cursor: pointer;
+  border: 2px solid transparent; transition: .15s ease; background: var(--surface);
+}
+.avatar-tile:hover { border-color: var(--accent); transform: translateY(-2px); }
 .nick-edit {
   font: inherit; font-family: var(--mono); width: 100%; max-width: 220px;
   padding: 2px 6px; border: 1px solid var(--accent); border-radius: 6px;

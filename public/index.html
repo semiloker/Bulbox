@@ -260,6 +260,22 @@
       <button class="icon-btn" id="bwFill" title="Put this identity's handle, email and password into the form on this page">
         <svg class="ic"><use href="#i-check"/></svg>Fill
       </button>
+      <button class="icon-btn" id="bwAvatar" title="Pick a generated avatar and drop it into the upload field">
+        <svg class="ic"><use href="#i-globe"/></svg>Avatar
+      </button>
+    </div>
+    <div id="avatarModal" class="avatar-modal hidden">
+      <div class="avatar-backdrop" data-close-avatar></div>
+      <div class="avatar-panel">
+        <div class="avatar-head">
+          <b>Pick an avatar</b>
+          <span class="sub">Drawn from this identity's handle — no upload, no third-party image.</span>
+          <span class="spacer"></span>
+          <button class="icon-btn" id="avatarShuffle"><svg class="ic"><use href="#i-refresh"/></svg>Shuffle</button>
+          <button class="icon-btn" data-close-avatar><svg class="ic"><use href="#i-close"/></svg></button>
+        </div>
+        <div class="avatar-grid" id="avatarGrid"></div>
+      </div>
     </div>
     <div class="browser-bar">
       <button class="mini-btn" id="bwBack" title="Back">‹</button>
