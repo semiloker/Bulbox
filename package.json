@@ -2,6 +2,7 @@
   "name": "bulbox",
   "version": "2.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Desktop app to generate and manage 100+ real mail.tm inboxes (handle + address + password), each with its own in-app Chromium browser session.",
   "type": "module",
   "main": "electron/main.cjs",
