@@ -636,6 +636,71 @@ $('#bwRevealPass').addEventListener('click', () => {
   $('#bwRevealPass use').setAttribute('href', bwPassShown ? '#i-eye-off' : '#i-eye');
 });
 
+// Runs inside the page, not in the app: fills the login form and stops there.
+// Submitting is left to you on purpose.
+function fillCredentialsInPage(creds) {
+  const visible = (el) => el.offsetParent !== null && !el.disabled && !el.readOnly;
+  const hint = (el) =>
+    [el.name, el.id, el.getAttribute('autocomplete'), el.placeholder, el.getAttribute('aria-label')]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+  const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
+  const set = (el, value) => {
+    const proto = Object.getPrototypeOf(el);
+    const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    // Go through the native setter so React and friends see the change.
+    if (desc && desc.set) desc.set.call(el, value);
+    else el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  let filled = 0;
+  const pw = inputs.find((el) => el.type === 'password');
+  if (pw && creds.password) {
+    set(pw, creds.password);
+    filled++;
+  }
+
+  const rest = inputs.filter((el) => el !== pw && el.type !== 'password' && el.type !== 'hidden');
+  const email = rest.find((el) => el.type === 'email' || /e-?mail/.test(hint(el)));
+  if (email && creds.email) {
+    set(email, creds.email);
+    filled++;
+  }
+
+  const user = rest.find((el) => el !== email && /user|login|nick|handle|account/.test(hint(el)));
+  if (user && creds.username) {
+    set(user, creds.username);
+    filled++;
+  } else if (!email && !user) {
+    // A single text box before the password is almost always the identifier.
+    const only = rest.find((el) => el.type === 'text' || !el.type);
+    if (only && creds.email) {
+      set(only, creds.email);
+      filled++;
+    }
+  }
+  return filled;
+}
+
+async function bwFill() {
+  const it = state.identities.find((i) => i.id === bwCurrentId);
+  if (!it || !bwWebview) return toast('Open an email browser first', false);
+  const creds = { email: it.email, username: it.nickname || '', password: it.password || '' };
+  try {
+    const n = await bwWebview.executeJavaScript(
+      '(' + fillCredentialsInPage.toString() + ')(' + JSON.stringify(creds) + ')'
+    );
+    toast(n ? 'Filled ' + n + (n > 1 ? ' fields' : ' field') : 'No login fields found here', !!n);
+  } catch {
+    toast('This page would not let me fill it', false);
+  }
+}
+$('#bwFill').addEventListener('click', bwFill);
+
 function bwNavigate() {
   const u = normalizeUrl($('#bwAddr').value);
   if (u && bwWebview) try { bwWebview.loadURL(u); } catch {}
