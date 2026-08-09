@@ -357,16 +357,23 @@ function cleanupGenerate(title = 'Done') {
   $('#progressTitle').textContent = title;
 }
 
+// Called again after every settings save: the domain list belongs to the chosen
+// provider, so switching provider must replace it instead of piling options up.
 async function loadDomains() {
+  const sel = $('#domain');
+  const pinned = sel.value;
+  sel.length = 1; // keep "Auto (recommended)"
   try {
-    const domains = await api.getDomains();
-    const sel = $('#domain');
-    (domains || []).forEach((d) => {
+    const domains = (await api.getDomains()) || [];
+    for (const d of domains) {
       const o = document.createElement('option');
       o.value = d;
       o.textContent = '@' + d;
       sel.appendChild(o);
-    });
+    }
+    // A domain pinned from the previous provider would silently force every
+    // address onto it, so drop it unless the new provider offers it too.
+    sel.value = domains.includes(pinned) ? pinned : '';
   } catch {}
 }
 
@@ -658,6 +665,7 @@ $('#saveSettings').addEventListener('click', async () => {
       torBridges: $('#torBridges').value,
     });
     toast('Settings saved');
+    loadDomains();
     refreshTransports();
     refreshTorStatus();
     warmTor();
