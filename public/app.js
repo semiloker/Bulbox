@@ -58,6 +58,15 @@ function makeHttpApi() {
         es.addEventListener('error', () => { if (es) { close(); resolve({ created: 0, failed: 0, aborted: true }); } });
       }),
     cancelGenerate: () => { if (es) { es.close(); es = null; } },
+    renameIdentity: async (id, nickname) => {
+      const r = await fetch('/api/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, nickname }),
+      }).then(json);
+      if (r.error) throw new Error(r.error);
+      return r;
+    },
     deleteIdentities: (ids) =>
       fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }).then(json),
     openInbox: async (id) => {
@@ -172,6 +181,7 @@ function renderRows() {
       <td><span class="cell-copy"><span class="mono">${esc(it.email)}</span>
         <button class="copy" data-copy="${esc(it.email)}" title="Copy email">${icon('i-copy')}</button></span></td>
       <td><span class="cell-copy"><span class="nickname">${esc(it.nickname)}</span>
+        <button class="copy edit-nick" title="Rename">${icon('i-pencil')}</button>
         <button class="copy" data-copy="${esc(it.nickname)}" title="Copy nickname">${icon('i-copy')}</button></span></td>
       <td><span class="pw"><code>${revealed ? esc(it.password) : '•'.repeat(10)}</code>
         <button class="copy toggle-pw" title="${revealed ? 'Hide' : 'Reveal'}">${icon(revealed ? 'i-eye-off' : 'i-eye')}</button>
@@ -208,10 +218,48 @@ $('#rows').addEventListener('click', (e) => {
     state.revealed.has(id) ? state.revealed.delete(id) : state.revealed.add(id);
     return renderRows();
   }
+  if (e.target.closest('.edit-nick')) return editNickname(tr, id);
   if (e.target.closest('.open-inbox')) return openInbox(id);
   if (e.target.closest('.open-browser')) return openBrowser(id);
   if (e.target.closest('.del-one')) return deleteIds([id]);
 });
+// Swap the nickname cell for an input in place: Enter or blur saves, Escape backs out.
+function editNickname(tr, id) {
+  const span = tr.querySelector('.nickname');
+  if (!span) return;
+  const before = span.textContent;
+  const input = document.createElement('input');
+  input.className = 'nick-edit';
+  input.value = before;
+  input.maxLength = 40;
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const finish = async (save) => {
+    if (settled) return;
+    settled = true;
+    const wanted = input.value.trim();
+    if (!save || !wanted || wanted === before) return renderRows();
+    try {
+      const r = await api.renameIdentity(id, wanted);
+      const it = state.identities.find((i) => i.id === id);
+      if (it) it.nickname = r.nickname;
+      toast('Renamed');
+    } catch (err) {
+      toast(err.message || 'Rename failed', false);
+    }
+    renderRows();
+  };
+
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') finish(true);
+    else if (ev.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
 $('#rows').addEventListener('change', (e) => {
   if (!e.target.classList.contains('rowcheck')) return;
   const id = e.target.closest('tr').dataset.id;
