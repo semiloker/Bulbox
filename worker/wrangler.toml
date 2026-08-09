@@ -1,0 +1,12 @@
+name = "bulbox-mail"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Fill database_id with what `wrangler d1 create bulbox` prints.
+[[d1_databases]]
+binding = "DB"
+database_name = "bulbox"
+database_id = "PASTE_DATABASE_ID_HERE"
+
+# API_TOKEN is a secret, not a var: wrangler secret put API_TOKEN
