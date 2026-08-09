@@ -95,3 +95,7 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 - `TOR_PATH` — path to `tor.exe` if it isn't auto-detected (also settable in Settings).
 - `PORT` — web-server mode port (default `3000`).
 - `NO_OPEN=1` — web-server mode: don't auto-open the browser.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
