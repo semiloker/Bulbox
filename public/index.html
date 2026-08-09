@@ -275,6 +275,16 @@
           <button class="icon-btn" data-close-avatar><svg class="ic"><use href="#i-close"/></svg></button>
         </div>
         <div class="avatar-grid" id="avatarGrid"></div>
+        <div class="avatar-own">
+          <label for="avatarUrl">…or use a picture you picked yourself</label>
+          <div class="avatar-own-row">
+            <input id="avatarUrl" type="text" placeholder="Paste an image link (right-click the image → Copy image address)" spellcheck="false" />
+            <button class="icon-btn" id="avatarUrlGo"><svg class="ic"><use href="#i-check"/></svg>Use</button>
+            <button class="icon-btn" id="avatarFileBtn"><svg class="ic"><use href="#i-copy"/></svg>From file…</button>
+            <input id="avatarFile" type="file" accept="image/*" class="hidden" />
+          </div>
+          <small id="avatarOwnNote">Whatever you point at is used as-is — make sure you are allowed to use that picture.</small>
+        </div>
       </div>
     </div>
     <div class="browser-bar">
