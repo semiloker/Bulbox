@@ -158,10 +158,88 @@ function openBrowserWindow(identity) {
   return win;
 }
 
+// --- in-app updates ----------------------------------------------------------
+// Installed builds check GitHub Releases and update themselves. A portable .exe
+// cannot: NSIS is what performs the swap, and there is no installation to swap.
+// Running from a checkout is excluded too — there is nothing to update there.
+let updateState = { status: 'idle' };
+
+function canSelfUpdate() {
+  return app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR;
+}
+
+function tellRenderer() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:state', updateState);
+  }
+}
+
+function setUpdateState(next) {
+  updateState = next;
+  tellRenderer();
+  return updateState;
+}
+
+let autoUpdater = null;
+function loadUpdater() {
+  if (autoUpdater) return autoUpdater;
+  ({ autoUpdater } = require('electron-updater'));
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-available', (info) =>
+    setUpdateState({ status: 'downloading', version: info.version })
+  );
+  autoUpdater.on('update-not-available', () =>
+    setUpdateState({ status: 'current', version: app.getVersion() })
+  );
+  autoUpdater.on('download-progress', (p) =>
+    setUpdateState({ status: 'downloading', percent: Math.round(p.percent) })
+  );
+  autoUpdater.on('update-downloaded', (info) =>
+    setUpdateState({ status: 'ready', version: info.version })
+  );
+  autoUpdater.on('error', (err) =>
+    setUpdateState({ status: 'error', message: String((err && err.message) || err) })
+  );
+  return autoUpdater;
+}
+
+async function checkForUpdate() {
+  if (!canSelfUpdate()) {
+    return setUpdateState({
+      status: 'unsupported',
+      version: app.getVersion(),
+      message: process.env.PORTABLE_EXECUTABLE_DIR
+        ? 'The portable build cannot update itself — download the new .exe.'
+        : 'Updates apply to the installed build only.',
+    });
+  }
+  try {
+    setUpdateState({ status: 'checking' });
+    await loadUpdater().checkForUpdates();
+  } catch (err) {
+    setUpdateState({ status: 'error', message: String((err && err.message) || err) });
+  }
+  return updateState;
+}
+
 function registerIpc() {
   ipcMain.handle('db:list', async () => (await loadLibs()).db.read());
 
   ipcMain.handle('settings:get', async () => (await loadLibs()).db.getSettings());
+
+  ipcMain.handle('app:version', async () => ({
+    version: app.getVersion(),
+    updatable: canSelfUpdate(),
+  }));
+
+  ipcMain.handle('update:check', async () => checkForUpdate());
+
+  ipcMain.handle('update:install', async () => {
+    if (updateState.status !== 'ready') throw new Error('No downloaded update to install.');
+    loadUpdater().quitAndInstall();
+    return { installing: true };
+  });
 
   // The point of the portable layout is that you can find the folder.
   ipcMain.handle('home:get', async () => HOME);
@@ -537,7 +615,7 @@ async function runSmoke() {
       })();
       return out;
     })()`);
-    result.appJsRan = await mainWindow.webContents.executeJavaScript('window.__inboxForgeReady === true');
+    result.appJsRan = await mainWindow.webContents.executeJavaScript('window.__bulboxReady === true');
     result.console = smokeConsole;
     try {
       const testPart = session.fromPartition('persist:__proxytest');
@@ -565,6 +643,8 @@ app.whenReady().then(async () => {
   registerIpc();
   createMainWindow();
   if (process.env.INBOX_FORGE_SMOKE === '1') runSmoke();
+  // One quiet check a few seconds after launch; the UI can ask again any time.
+  if (canSelfUpdate()) setTimeout(() => checkForUpdate(), 4000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });

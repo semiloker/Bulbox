@@ -776,6 +776,14 @@ function paintAvatar(canvas, seed, style) {
   return canvas;
 }
 
+// The sidebar mark is the app icon, drawn by the same painter that produced
+// build/icon.ico — so the two can never drift apart.
+function paintBrandMark() {
+  const c = $('#brandMark');
+  if (c) paintAvatar(c, 'bulbox', 0);
+}
+paintBrandMark();
+
 let avatarSalt = 0;
 
 function avatarSeeds() {
@@ -952,6 +960,7 @@ async function loadSettings() {
     applyTheme(s.theme || 'system');
   } catch {}
   showHomeFolder();
+  showVersion();
   updateProviderVisibility();
   updateBridgeVisibility();
   refreshTransports();
@@ -978,6 +987,46 @@ $('#testMail').addEventListener('click', async () => {
     out.textContent = e.message;
   }
 });
+
+// ---------- in-app updates ----------
+const UPDATE_TEXT = {
+  checking: () => 'Checking…',
+  current: (s) => 'Up to date (' + (s.version || '') + ').',
+  downloading: (s) =>
+    s.percent != null ? 'Downloading update… ' + s.percent + '%' : 'Update found, downloading…',
+  ready: (s) => 'Version ' + s.version + ' is ready — restart to install it.',
+  unsupported: (s) => s.message || 'This build does not update itself.',
+  error: (s) => 'Update check failed: ' + (s.message || 'unknown error'),
+};
+
+function renderUpdateState(s) {
+  if (!s) return;
+  const note = $('#updateNote');
+  const render = UPDATE_TEXT[s.status];
+  note.textContent = render ? render(s) : '';
+  note.classList.toggle('bad', s.status === 'error');
+  $('#restartUpdate').classList.toggle('hidden', s.status !== 'ready');
+}
+
+async function showVersion() {
+  if (!IS_APP || !api.appVersion) return;
+  try {
+    const info = await api.appVersion();
+    $('#appVersion').value = 'v' + info.version + (info.updatable ? '' : ' (portable)');
+    $('#updateField').classList.remove('hidden');
+  } catch {}
+}
+
+$('#checkUpdate').addEventListener('click', async () => {
+  renderUpdateState({ status: 'checking' });
+  try {
+    renderUpdateState(await api.checkUpdate());
+  } catch (e) {
+    renderUpdateState({ status: 'error', message: e.message });
+  }
+});
+$('#restartUpdate').addEventListener('click', () => api.installUpdate && api.installUpdate());
+if (IS_APP && api.onUpdateState) api.onUpdateState(renderUpdateState);
 
 // Desktop only: the web server has no single folder to point at.
 async function showHomeFolder() {
@@ -1085,4 +1134,4 @@ async function refreshTransports() {
 })();
 
 // Marker so a smoke test can confirm this script attached all listeners without throwing.
-window.__inboxForgeReady = true;
+window.__bulboxReady = true;
