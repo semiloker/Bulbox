@@ -89,7 +89,7 @@ async function handleGenerate(req, res, q) {
   const settings = await db.getSettings();
   const provider = q.get('provider') || settings.provider || 'mail.tm';
   const conf = { ...settings, provider };
-  let domain = q.get('domain') || '';
+  const domain = q.get('domain') || '';
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -110,18 +110,17 @@ async function handleGenerate(req, res, q) {
   };
 
   try {
-    if (!domain) {
-      const domains = await mail.getDomains(conf);
-      if (!domains.length) throw new Error(noDomainMessage(provider));
-      domain = domains[0];
-    }
+    // Spread addresses over every domain the provider offers instead of burning
+    // one: a single domain across hundreds of signups is what gets blocklisted.
+    const pool = domain ? [domain] : await mail.getDomains(conf);
+    if (!pool.length) throw new Error(noDomainMessage(provider));
     // A catch-all domain accepts every address offline: nothing to rate-limit.
     const throttleMs = provider === 'domain' ? 0 : clamp(Number(settings.throttleMs) || 500, 150, 5000);
     const existing = new Set((await db.read()).identities.map((i) => i.email.toLowerCase()));
 
     let created = 0;
     let failed = 0;
-    send('start', { total: count, domain, provider });
+    send('start', { total: count, domain: pool.length > 1 ? `${pool.length} domains` : pool[0], provider });
 
     for (let i = 0; i < count && !aborted; i++) {
       const nickname = generate.randomNickname();
@@ -129,7 +128,7 @@ async function handleGenerate(req, res, q) {
       let lastErr = null;
 
       for (let attempt = 0; attempt < 6 && !aborted; attempt++) {
-        const email = `${generate.localPart(style, nickname)}@${domain}`.toLowerCase();
+        const email = `${generate.localPart(style, nickname)}@${pool[(i + attempt) % pool.length]}`.toLowerCase();
         if (existing.has(email)) continue;
         const password = generate.randomPassword(pwLen, pwStyle);
         try {

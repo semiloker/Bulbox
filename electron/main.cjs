@@ -171,23 +171,22 @@ function registerIpc() {
     const s = await db.getSettings();
     const provider = opts.provider || s.provider || 'mail.tm';
     const conf = { ...s, provider };
-    let domain = opts.domain || '';
+    const domain = opts.domain || '';
     cancelGen = false;
 
     const emit = (data) => {
       if (!e.sender.isDestroyed()) e.sender.send('generate:progress', data);
     };
 
-    if (!domain) {
-      const domains = await mail.getDomains(conf);
-      if (!domains.length) {
-        throw new Error(
-          provider === 'domain'
-            ? 'Set your domain in Settings first (the catch-all domain your worker receives mail for).'
-            : 'No mail.tm domains are available right now. Try again shortly.'
-        );
-      }
-      domain = domains[0];
+    // Spread addresses over every domain the provider offers instead of burning
+    // one: a single domain across hundreds of signups is what gets blocklisted.
+    const pool = domain ? [domain] : await mail.getDomains(conf);
+    if (!pool.length) {
+      throw new Error(
+        provider === 'domain'
+          ? 'Set your domain in Settings first (the catch-all domain your worker receives mail for).'
+          : `${provider} has no domains available right now. Try again shortly.`
+      );
     }
     // A catch-all domain accepts every address offline: nothing to rate-limit.
     const throttleMs = provider === 'domain' ? 0 : clamp(Number(s.throttleMs) || 500, 150, 5000);
@@ -195,7 +194,7 @@ function registerIpc() {
 
     let created = 0;
     let failed = 0;
-    emit({ type: 'start', total: count, domain, provider });
+    emit({ type: 'start', total: count, domain: pool.length > 1 ? `${pool.length} domains` : pool[0], provider });
 
     for (let i = 0; i < count && !cancelGen; i++) {
       const nickname = generate.randomNickname();
@@ -203,7 +202,7 @@ function registerIpc() {
       let lastErr = null;
 
       for (let attempt = 0; attempt < 6 && !cancelGen; attempt++) {
-        const email = `${generate.localPart(style, nickname)}@${domain}`.toLowerCase();
+        const email = `${generate.localPart(style, nickname)}@${pool[(i + attempt) % pool.length]}`.toLowerCase();
         if (existing.has(email)) continue;
         const password = generate.randomPassword(pwLen, pwStyle);
         try {
