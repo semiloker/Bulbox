@@ -10,6 +10,7 @@ and a **dedicated in-app browser** with an isolated, persistent session that can
 ```bash
 npm install     # one time (downloads the Chromium runtime)
 npm start       # launches the desktop app
+npm test        # runs the self-checks
 ```
 
 Prefer the old browser version? `npm run web` starts a local server at http://localhost:3000
