@@ -18,12 +18,21 @@ Prefer the old browser version? `npm run web` starts a local server at http://lo
 
 ## Where the addresses come from
 
-Two backends, switchable in **Settings**:
+Switchable in **Settings**:
 
-- **mail.tm / mail.gw** — zero setup, but their domains sit in every disposable-email
-  blocklist, so a fair number of sites reject them. Inboxes are also semi-temporary.
-- **Own domain (catch-all)** — every address on a domain you control, permanent, and not
-  recognisable as throwaway. Costs one domain and a ten-minute setup, below.
+| Backend | Setup | Domains | Notes |
+|---|---|---|---|
+| **mail.tm** | none | **1** (`emalupe.com`) | one long-burned domain — the most blocked option |
+| **mail.gw** | none | 5 | same operator, domains that read like real businesses |
+| **temp-mail.io** | none | 8 | biggest free pool; anyone who knows the address can read it |
+| **Own domain** | ~10 min | yours | permanent, not recognisable as throwaway |
+
+Generation spreads addresses across **every** domain a backend offers, round-robin, rather
+than burning one — pick a specific one in the Generate screen only if you need to.
+
+No public temp-mail service is unblockable: their domains are on the same lists, and the
+only real difference is how well known each one is. If sites keep rejecting you, the fix is
+your own domain, not another provider.
 
 ### Setting up your own domain
 
@@ -31,10 +40,15 @@ The receiving half lives in `worker/`: Cloudflare Email Routing catches all mail
 domain, an Email Worker parses it and stores it in D1, and the app reads it over HTTP.
 Cloudflare's free tier covers this comfortably (100k worker requests/day, 5 GB in D1).
 
-1. **Get a domain** and point its nameservers at Cloudflare. A normal TLD (~$5–10/yr) is
-   the safest; `.eu.org` is free but hand-approved. Free subdomain services
-   (`.us.kg`, `.dpdns.org`, …) work technically but are themselves heavily blocklisted —
-   which defeats the point of leaving mail.tm.
+1. **Get a domain** and point its nameservers at Cloudflare. Note that the Cloudflare side
+   is free — only the domain can cost anything, and it does not have to:
+   - a normal TLD (~$5–10/yr) is the safest;
+   - [`.eu.org`](https://nic.eu.org) is **free**, real and barely associated with abuse,
+     but applications are approved by hand (days);
+   - [DigitalPlat FreeDomain](https://dash.domain.digitalplat.org) hands out
+     `.dpdns.org` / `.qzz.io` / `.us.kg` **free in minutes** and lets you delegate NS to
+     Cloudflare. The catch: those TLDs are abused a lot, so some sites block them
+     wholesale. Still better than a shared temp-mail domain, and free.
 2. **Cloudflare → Email → Email Routing**, enable it and let it add the MX records.
 3. **Deploy the worker:**
    ```bash
@@ -124,7 +138,8 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 | `electron/main.cjs` | Electron main process — IPC handlers, per-email sessions, Tor proxying |
 | `electron/preload.cjs` | secure bridge exposing `window.forge` to the UI |
 | `providers/index.js` | picks the backend per identity, hides mail.tm's tokens |
-| `providers/mailtm.js` | mail.tm API adapter |
+| `providers/mailtm.js` | mail.tm / mail.gw API adapter |
+| `providers/tempmailio.js` | temp-mail.io API adapter (8 public domains) |
 | `providers/domain.js` | own-domain adapter — talks to the worker |
 | `worker/` | Cloudflare Email Worker + D1 schema (deployed separately) |
 | `lib/db.js` | atomic JSON storage + backups |
