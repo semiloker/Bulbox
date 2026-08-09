@@ -1,4 +1,4 @@
-# Inbox Forge
+# Bulbox
 
 A **desktop app** (Electron / Chromium) to generate and manage **100+ real email inboxes**. Each
 inbox gets a **handle** (github/gamer-style nickname), an **address**, its own **password/login**,

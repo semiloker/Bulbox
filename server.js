@@ -336,7 +336,7 @@ function openBrowser(url) {
 await db.ensure();
 server.listen(PORT, () => {
   const url = `http://localhost:${PORT}`;
-  console.log(`\n  Inbox Forge running at  ${url}`);
+  console.log(`\n  Bulbox running at  ${url}`);
   console.log(`  Database file:          ${db.dbPath()}`);
   console.log(`  Press Ctrl+C to stop.\n`);
   if (process.env.NO_OPEN !== '1') openBrowser(url);

@@ -39,7 +39,7 @@ function createMainWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0e0f13',
-    title: 'Inbox Forge',
+    title: 'Bulbox',
     autoHideMenuBar: true,
     show: process.env.INBOX_FORGE_SMOKE !== '1',
     webPreferences: {
