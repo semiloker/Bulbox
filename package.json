@@ -10,7 +10,8 @@
   },
   "scripts": {
     "start": "electron .",
-    "web": "node server.js"
+    "web": "node server.js",
+    "test": "node test/generate.test.js"
   },
   "devDependencies": {
     "electron": "^31.0.0"
