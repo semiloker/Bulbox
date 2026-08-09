@@ -12,6 +12,7 @@ globalThis.fetch = async (url, init = {}) => {
     ok: reply.status >= 200 && reply.status < 300,
     status: reply.status,
     json: async () => reply.body,
+    text: async () => JSON.stringify(reply.body),
   };
 };
 
@@ -79,5 +80,50 @@ assert.equal(await mail.checkConnection({ provider: 'mail.tm' }), 'mail.tm needs
 
 reply = { status: 401, body: {} };
 await assert.rejects(() => mail.checkConnection(settings), /rejected the API token/);
+
+// --- temp-mail.io ------------------------------------------------------------
+const tmio = { provider: 'temp-mail.io' };
+const box = { email: 'neon-raven7@bltiwd.com', provider: 'temp-mail.io', accountId: 'tok123' };
+
+reply = {
+  status: 200,
+  body: { domains: [{ name: 'bltiwd.com', type: 'public' }, { name: 'vip.com', type: 'private' }] },
+};
+assert.deepEqual(await mail.getDomains(tmio), ['bltiwd.com'], 'private domains are not offered');
+
+reply = {
+  status: 200,
+  body: [
+    {
+      id: 42,
+      from: 'noreply@site.com',
+      subject: 'Confirm',
+      body_text: '  your   code is 1234 ',
+      body_html: '<b>1234</b>',
+      created_at: '2026-08-09T10:00:00Z',
+      attachments: [],
+    },
+  ],
+};
+const [msg] = await mail.listMessages(tmio, box);
+assert.equal(msg.from.address, 'noreply@site.com', 'mapped into the mail.tm shape the UI expects');
+assert.equal(msg.intro, 'your code is 1234', 'intro is collapsed whitespace');
+assert.equal(msg.hasAttachments, false);
+assert.ok(
+  last().url.endsWith('/email/neon-raven7@bltiwd.com/messages'),
+  `the @ must stay literal, got ${last().url}`
+);
+
+assert.equal((await mail.getMessage(tmio, box, 42)).html, '<b>1234</b>');
+assert.equal((await mail.getMessage(tmio, box, '42')).text, '  your   code is 1234 ', 'ids compare loosely');
+await assert.rejects(() => mail.getMessage(tmio, box, 999), /Message not found/);
+
+reply = { status: 200, body: {} };
+await mail.deleteIdentity(tmio, box);
+assert.equal(last().method, 'DELETE');
+
+// A taken local part must look like mail.tm's 422 so the retry loop reacts.
+reply = { status: 400, body: { error: 'taken' } };
+await assert.rejects(() => mail.createIdentity(tmio, 'x@bltiwd.com', 'pw'), (e) => e.status === 422);
 
 console.log('ok');
