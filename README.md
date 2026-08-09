@@ -16,9 +16,48 @@ npm test        # runs the self-checks
 Prefer the old browser version? `npm run web` starts a local server at http://localhost:3000
 (same features, opens in your normal browser).
 
+## Where the addresses come from
+
+Two backends, switchable in **Settings**:
+
+- **mail.tm / mail.gw** — zero setup, but their domains sit in every disposable-email
+  blocklist, so a fair number of sites reject them. Inboxes are also semi-temporary.
+- **Own domain (catch-all)** — every address on a domain you control, permanent, and not
+  recognisable as throwaway. Costs one domain and a ten-minute setup, below.
+
+### Setting up your own domain
+
+The receiving half lives in `worker/`: Cloudflare Email Routing catches all mail for the
+domain, an Email Worker parses it and stores it in D1, and the app reads it over HTTP.
+Cloudflare's free tier covers this comfortably (100k worker requests/day, 5 GB in D1).
+
+1. **Get a domain** and point its nameservers at Cloudflare. A normal TLD (~$5–10/yr) is
+   the safest; `.eu.org` is free but hand-approved. Free subdomain services
+   (`.us.kg`, `.dpdns.org`, …) work technically but are themselves heavily blocklisted —
+   which defeats the point of leaving mail.tm.
+2. **Cloudflare → Email → Email Routing**, enable it and let it add the MX records.
+3. **Deploy the worker:**
+   ```bash
+   cd worker
+   npm install
+   npx wrangler d1 create bulbox          # paste database_id into wrangler.toml
+   npx wrangler d1 execute bulbox --remote --file schema.sql
+   npx wrangler secret put API_TOKEN      # invent a long random string
+   npx wrangler deploy
+   ```
+4. **Email Routing → Routing rules → Catch-all**: action **Send to a Worker**, pick
+   `bulbox-mail`.
+5. In the app: **Settings → Provider → Own domain**, fill in the domain, the worker URL
+   and the same `API_TOKEN`, then **Save**.
+
+Generation then runs offline — no API calls, no rate limit, no throttle.
+
+**Reality check:** one domain used for hundreds of signups eventually earns its own place
+on the blocklists. The domain buys you a clean start, not immunity.
+
 ## What each inbox gives you
 
-- **Mail** — read the inbox right inside the app (it's a real mail.tm address).
+- **Mail** — read the inbox right inside the app (a real address either way).
 - **Browser** — opens an in-window browser panel (toolbar with back/forward/reload + address bar)
   with a **persistent session unique to that email**. Sign in to a site as that identity and the
   cookies are saved and isolated per email. Deleting the row wipes its saved browser data.
@@ -66,8 +105,10 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 ## Good to know
 
 - **Receive-only.** Great for signups & verification codes; you can't *send* from these.
-- **Semi-temporary.** mail.tm may expire inactive inboxes — not for permanent archives.
-- **Some sites block temp-mail domains.** Works for most signups, not all.
+- **Semi-temporary — on mail.tm only.** mail.tm may expire inactive inboxes. Mail on your
+  own domain stays in D1 until you delete it.
+- **Some sites block temp-mail domains.** That's the whole reason the own-domain backend
+  exists.
 - **Privacy.** Passwords are stored in plain text in `data/emails.json` on your machine.
 
 ## Data & safety
@@ -82,7 +123,10 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 |------|------------|
 | `electron/main.cjs` | Electron main process — IPC handlers, per-email sessions, Tor proxying |
 | `electron/preload.cjs` | secure bridge exposing `window.forge` to the UI |
+| `providers/index.js` | picks the backend per identity, hides mail.tm's tokens |
 | `providers/mailtm.js` | mail.tm API adapter |
+| `providers/domain.js` | own-domain adapter — talks to the worker |
+| `worker/` | Cloudflare Email Worker + D1 schema (deployed separately) |
 | `lib/db.js` | atomic JSON storage + backups |
 | `lib/generate.js` | handle / address / password generators |
 | `lib/tor.js` | local Tor manager (SocksPort pool, one exit IP per email) |
@@ -93,6 +137,7 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 ## Environment variables
 
 - `INBOX_FORGE_DATA` — use a different folder for the database.
+- `API_TOKEN` — worker-side secret (set with `wrangler secret put`, not an app env var).
 - `TOR_PATH` — path to `tor.exe` if it isn't auto-detected (also settable in Settings).
 - `PORT` — web-server mode port (default `3000`).
 - `NO_OPEN=1` — web-server mode: don't auto-open the browser.
