@@ -308,6 +308,15 @@ const server = http.createServer(async (req, res) => {
       return handleOpenBrowser(res, body.id);
     }
 
+    if (pathname === '/api/rename' && req.method === 'POST') {
+      const { id, nickname } = await readBody(req);
+      const clean = generate.cleanNickname(nickname);
+      if (!clean) return sendJson(res, 400, { error: 'A handle cannot be empty.' });
+      const identity = await db.renameIdentity(id, clean);
+      if (!identity) return sendJson(res, 404, { error: 'Identity not found' });
+      return sendJson(res, 200, { id, nickname: clean });
+    }
+
     if (pathname === '/api/settings' && req.method === 'GET') {
       return sendJson(res, 200, await db.getSettings());
     }
