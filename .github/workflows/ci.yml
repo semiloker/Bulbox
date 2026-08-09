@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # The three assert-based self-checks: handles/passwords, the JSON store, and
+  # every mail provider (network is stubbed, so this stays deterministic).
+  tests:
+    name: tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: generators
+        run: node test/generate.test.js
+      - name: json store
+        run: node test/db.test.js
+      - name: providers
+        run: node test/providers.test.js
+
+  # Every entry point must at least parse. Cheap, and it catches the class of
+  # mistake where a patch lands broken syntax in a file no test imports.
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: parse every source file
+        run: |
+          for f in server.js electron/*.cjs lib/*.js providers/*.js public/app.js scripts/*.cjs worker/worker.js; do
+            node --check "$f" || exit 1
+          done
+          echo "all files parse"
+
+  # Packaging breaks in ways unit tests cannot see (paths, asar, missing files),
+  # so build the real thing on every push.
+  build:
+    runs-on: windows-latest
+    needs: [tests, syntax]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: build installer and portable exe
+        run: npm run dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/*.exe
+            dist/latest.yml
+          if-no-files-found: error
