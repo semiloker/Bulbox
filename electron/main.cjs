@@ -394,7 +394,11 @@ async function runSmoke() {
 }
 
 app.whenReady().then(async () => {
-  Menu.setApplicationMenu(null);
+  // Keep a menu, even though autoHideMenuBar hides it: on Windows and Linux the
+  // menu is what owns the standard Ctrl+C/V/X/A/Z accelerators. Dropping it with
+  // setApplicationMenu(null) silently kills copy & paste everywhere in the app,
+  // including inside each email's browser panel.
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'editMenu' }, { role: 'viewMenu' }]));
   await loadLibs();
   await libs.db.ensure();
   registerIpc();
