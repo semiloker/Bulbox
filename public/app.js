@@ -490,6 +490,7 @@ async function openBrowserPanel(id) {
   if (bwCurrentId === id && bwWebview) {
     try { $('#bwAddr').value = bwWebview.getURL(); } catch {}
     openBrowserDrawer();
+    focusBrowser();
     return;
   }
 
@@ -513,6 +514,14 @@ async function openBrowserPanel(id) {
   const sync = () => { try { addr.value = wv.getURL(); } catch {} };
   wv.addEventListener('did-navigate', sync);
   wv.addEventListener('did-navigate-in-page', sync);
+  wv.addEventListener('dom-ready', focusBrowser);
+}
+
+// Hiding the drawer takes the webview through display:none, which detaches the
+// guest. On the way back clicks land but keystrokes go nowhere until the guest
+// is focused again — so focus it explicitly whenever the panel is shown.
+function focusBrowser() {
+  try { if (bwWebview) bwWebview.focus(); } catch {}
 }
 
 async function applyNetwork(id) {
