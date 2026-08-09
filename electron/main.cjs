@@ -1,5 +1,5 @@
 // electron/main.cjs — Electron main process.
-// Wires the framework-agnostic lib modules (db, generate, mailtm) to IPC handlers,
+// Wires the framework-agnostic lib modules (db, generate, providers) to IPC handlers,
 // and opens a persistent, isolated Chromium window per email.
 
 const { app, BrowserWindow, ipcMain, dialog, session, Menu } = require('electron');
@@ -18,13 +18,13 @@ const bridgeArg = (s) => (s && s.torBridgeMode === 'bridges' ? s.torBridges || '
 let libs = null;
 async function loadLibs() {
   if (libs) return libs;
-  const [db, generate, mailtm, tor] = await Promise.all([
+  const [db, generate, mail, tor] = await Promise.all([
     import(pathToFileURL(path.join(ROOT, 'lib', 'db.js')).href),
     import(pathToFileURL(path.join(ROOT, 'lib', 'generate.js')).href),
-    import(pathToFileURL(path.join(ROOT, 'providers', 'mailtm.js')).href),
+    import(pathToFileURL(path.join(ROOT, 'providers', 'index.js')).href),
     import(pathToFileURL(path.join(ROOT, 'lib', 'tor.js')).href),
   ]);
-  libs = { db, generate, mailtm, tor };
+  libs = { db, generate, mail, tor };
   return libs;
 }
 
@@ -92,6 +92,9 @@ function registerIpc() {
     if (patch.provider) p.provider = patch.provider;
     if (patch.throttleMs != null) p.throttleMs = clamp(Number(patch.throttleMs) || 500, 150, 5000);
     if (patch.theme) p.theme = patch.theme;
+    if (patch.domain !== undefined) p.domain = String(patch.domain || '').trim().toLowerCase();
+    if (patch.mailApi !== undefined) p.mailApi = String(patch.mailApi || '').trim();
+    if (patch.mailToken !== undefined) p.mailToken = String(patch.mailToken || '').trim();
     if (typeof patch.torEnabled === 'boolean') p.torEnabled = patch.torEnabled;
     if (patch.torPath !== undefined) p.torPath = String(patch.torPath || '');
     if (patch.torBridgeMode) p.torBridgeMode = patch.torBridgeMode === 'bridges' ? 'bridges' : 'none';
@@ -145,9 +148,8 @@ function registerIpc() {
   });
 
   ipcMain.handle('domains:get', async () => {
-    const { db, mailtm } = await loadLibs();
-    const s = await db.getSettings();
-    return mailtm.getDomains(s.provider);
+    const { db, mail } = await loadLibs();
+    return mail.getDomains(await db.getSettings());
   });
 
   ipcMain.on('generate:cancel', () => {
@@ -155,13 +157,14 @@ function registerIpc() {
   });
 
   ipcMain.handle('generate:run', async (e, opts = {}) => {
-    const { db, generate, mailtm } = await loadLibs();
+    const { db, generate, mail } = await loadLibs();
     const count = clamp(parseInt(opts.count) || 100, 1, 500);
     const style = opts.localPart || 'word';
     const pwLen = parseInt(opts.pwLen) || 16;
     const pwStyle = opts.pwStyle || 'strong';
     const s = await db.getSettings();
     const provider = opts.provider || s.provider || 'mail.tm';
+    const conf = { ...s, provider };
     let domain = opts.domain || '';
     cancelGen = false;
 
@@ -170,11 +173,18 @@ function registerIpc() {
     };
 
     if (!domain) {
-      const domains = await mailtm.getDomains(provider);
-      if (!domains.length) throw new Error('No mail.tm domains are available right now. Try again shortly.');
+      const domains = await mail.getDomains(conf);
+      if (!domains.length) {
+        throw new Error(
+          provider === 'domain'
+            ? 'Set your domain in Settings first (the catch-all domain your worker receives mail for).'
+            : 'No mail.tm domains are available right now. Try again shortly.'
+        );
+      }
       domain = domains[0];
     }
-    const throttleMs = clamp(Number(s.throttleMs) || 500, 150, 5000);
+    // A catch-all domain accepts every address offline: nothing to rate-limit.
+    const throttleMs = provider === 'domain' ? 0 : clamp(Number(s.throttleMs) || 500, 150, 5000);
     const existing = new Set((await db.read()).identities.map((i) => i.email.toLowerCase()));
 
     let created = 0;
@@ -191,7 +201,7 @@ function registerIpc() {
         if (existing.has(email)) continue;
         const password = generate.randomPassword(pwLen, pwStyle);
         try {
-          const accountId = await mailtm.createAccount(provider, email, password);
+          const accountId = await mail.createIdentity(conf, email, password);
           identity = {
             id: db.newId(),
             email,
@@ -249,17 +259,16 @@ function registerIpc() {
   });
 
   ipcMain.handle('db:delete', async (_e, ids) => {
-    const { db, mailtm } = await loadLibs();
+    const { db, mail } = await loadLibs();
     if (!Array.isArray(ids) || !ids.length) return { removed: 0, serverDeleted: 0 };
     await db.backup('pre-delete');
+    const settings = await db.getSettings();
     let serverDeleted = 0;
     for (const id of ids) {
       const identity = await db.getIdentity(id);
       if (!identity) continue;
       try {
-        const provider = identity.provider || 'mail.tm';
-        const token = await mailtm.getToken(provider, identity.email, identity.password);
-        await mailtm.deleteAccount(provider, token, identity.accountId);
+        await mail.deleteIdentity(settings, identity);
         serverDeleted++;
       } catch {
         /* already gone server-side */
@@ -275,22 +284,18 @@ function registerIpc() {
   });
 
   ipcMain.handle('inbox:open', async (_e, id) => {
-    const { db, mailtm } = await loadLibs();
+    const { db, mail } = await loadLibs();
     const identity = await db.getIdentity(id);
     if (!identity) throw new Error('Identity not found');
-    const provider = identity.provider || 'mail.tm';
-    const token = await mailtm.getToken(provider, identity.email, identity.password);
-    const messages = await mailtm.listMessages(provider, token);
+    const messages = await mail.listMessages(await db.getSettings(), identity);
     return { email: identity.email, messages };
   });
 
   ipcMain.handle('message:open', async (_e, { id, mid }) => {
-    const { db, mailtm } = await loadLibs();
+    const { db, mail } = await loadLibs();
     const identity = await db.getIdentity(id);
     if (!identity) throw new Error('Identity not found');
-    const provider = identity.provider || 'mail.tm';
-    const token = await mailtm.getToken(provider, identity.email, identity.password);
-    const message = await mailtm.getMessage(provider, token, mid);
+    const message = await mail.getMessage(await db.getSettings(), identity, mid);
     return { message };
   });
 
