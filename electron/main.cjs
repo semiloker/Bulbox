@@ -152,6 +152,12 @@ function registerIpc() {
     return mail.getDomains(await db.getSettings());
   });
 
+  ipcMain.handle('settings:test', async (_e, patch = {}) => {
+    const { db, mail } = await loadLibs();
+    // Test what's on screen, not what was last saved.
+    return mail.checkConnection({ ...(await db.getSettings()), ...patch });
+  });
+
   ipcMain.on('generate:cancel', () => {
     cancelGen = true;
   });
