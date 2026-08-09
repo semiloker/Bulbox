@@ -589,6 +589,9 @@ async function loadSettings() {
     const s = await api.getSettings();
     state.settings = s;
     $('#provider').value = s.provider || 'mail.tm';
+    $('#ownDomain').value = s.domain || '';
+    $('#mailApi').value = s.mailApi || '';
+    $('#mailToken').value = s.mailToken || '';
     $('#throttle').value = s.throttleMs || 500;
     $('#torEnabled').checked = !!s.torEnabled;
     $('#torPath').value = s.torPath || '';
@@ -596,15 +599,25 @@ async function loadSettings() {
     $('#torBridges').value = s.torBridges || '';
     applyTheme(s.theme || 'system');
   } catch {}
+  updateProviderVisibility();
   updateBridgeVisibility();
   refreshTransports();
   refreshTorStatus();
   warmTor();
 }
+// The own-domain fields are noise unless that provider is selected.
+function updateProviderVisibility() {
+  $('#domainFields').classList.toggle('hidden', $('#provider').value !== 'domain');
+}
+$('#provider').addEventListener('change', updateProviderVisibility);
+
 $('#saveSettings').addEventListener('click', async () => {
   try {
     state.settings = await api.saveSettings({
       provider: $('#provider').value,
+      domain: $('#ownDomain').value,
+      mailApi: $('#mailApi').value,
+      mailToken: $('#mailToken').value,
       throttleMs: $('#throttle').value,
       torEnabled: $('#torEnabled').checked,
       torPath: $('#torPath').value,

@@ -146,7 +146,24 @@
           <select id="provider">
             <option value="mail.tm">mail.tm</option>
             <option value="mail.gw">mail.gw (mirror)</option>
+            <option value="domain">Own domain (catch-all)</option>
           </select>
+          <small>Own domain = permanent addresses that sites don't recognise as throwaway. Needs the worker from <code>worker/</code> deployed once — see the README.</small>
+        </div>
+        <div id="domainFields" class="hidden">
+          <div class="field">
+            <label for="ownDomain">Your domain</label>
+            <input id="ownDomain" type="text" placeholder="example.com" spellcheck="false" />
+            <small>Every address on it works — no registration, nothing expires.</small>
+          </div>
+          <div class="field">
+            <label for="mailApi">Mail worker URL</label>
+            <input id="mailApi" type="text" placeholder="https://bulbox-mail.you.workers.dev" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="mailToken">Worker API token</label>
+            <input id="mailToken" type="password" placeholder="the secret you set with wrangler secret put API_TOKEN" spellcheck="false" />
+          </div>
         </div>
         <div class="field">
           <label for="throttle">Throttle between creates (ms)</label>
