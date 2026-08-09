@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>inbox browser</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111318; font-family: system-ui, "Segoe UI", Roboto, sans-serif; }
+  .wrap { height: 100vh; display: flex; flex-direction: column; }
+  .bar { display: flex; gap: 6px; align-items: center; padding: 8px; background: #1e2129; border-bottom: 1px solid #2a2e37; }
+  .bar button { border: 0; background: #2a2e37; color: #e8eaed; border-radius: 8px; padding: 6px 11px; cursor: pointer; font-size: 15px; line-height: 1; }
+  .bar button:hover { background: #363c47; }
+  .bar input { flex: 1; padding: 8px 12px; border-radius: 9px; border: 1px solid #3a3f4b; background: #0e0f13; color: #e8eaed; font-size: 13px; outline: none; }
+  .bar input:focus { border-color: #7c6ffd; }
+  .email { color: #9aa1ad; font-size: 12px; padding: 0 8px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  webview { flex: 1; width: 100%; border: 0; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="bar">
+      <button id="back" title="Back">‹</button>
+      <button id="fwd" title="Forward">›</button>
+      <button id="reload" title="Reload">⟳</button>
+      <input id="addr" placeholder="Search or type a URL" spellcheck="false" />
+      <button id="go">Go</button>
+      <span class="email" id="who"></span>
+    </div>
+    <webview id="wv"></webview>
+  </div>
+
+  <script>
+    const q = new URLSearchParams(location.search);
+    const partition = q.get('partition') || '';
+    const startUrl = q.get('url') || 'https://www.google.com';
+    const email = q.get('email') || '';
+
+    const wv = document.getElementById('wv');
+    const addr = document.getElementById('addr');
+    document.getElementById('who').textContent = email;
+    if (email) document.title = email;
+
+    if (partition) wv.setAttribute('partition', partition);
+    wv.setAttribute('src', startUrl);
+    addr.value = startUrl;
+
+    function normalize(v) {
+      v = (v || '').trim();
+      if (!v) return '';
+      if (/^[a-z]+:\/\//i.test(v)) return v;
+      if (/^[^\s.]+\.[^\s]{2,}(\/.*)?$/.test(v)) return 'https://' + v;
+      return 'https://www.google.com/search?q=' + encodeURIComponent(v);
+    }
+    function navigate() {
+      const u = normalize(addr.value);
+      if (u) try { wv.loadURL(u); } catch {}
+    }
+
+    document.getElementById('go').addEventListener('click', navigate);
+    addr.addEventListener('keydown', (e) => { if (e.key === 'Enter') navigate(); });
+    document.getElementById('back').addEventListener('click', () => { try { if (wv.canGoBack()) wv.goBack(); } catch {} });
+    document.getElementById('fwd').addEventListener('click', () => { try { if (wv.canGoForward()) wv.goForward(); } catch {} });
+    document.getElementById('reload').addEventListener('click', () => { try { wv.reload(); } catch {} });
+
+    const sync = () => { try { addr.value = wv.getURL(); } catch {} };
+    wv.addEventListener('did-navigate', sync);
+    wv.addEventListener('did-navigate-in-page', sync);
+    wv.addEventListener('page-title-updated', (e) => {
+      document.title = (email ? email + ' · ' : '') + (e.title || '');
+    });
+  </script>
+</body>
+</html>
