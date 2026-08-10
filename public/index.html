@@ -235,6 +235,26 @@
   </main>
 </div>
 
+    <div id="catModal" class="avatar-modal hidden">
+      <div class="avatar-backdrop" data-close-cat></div>
+      <div class="avatar-panel narrow-panel">
+        <div class="avatar-head">
+          <b>Move <span id="catCount">0</span> selected</b>
+          <span class="spacer"></span>
+          <button class="icon-btn" data-close-cat><svg class="ic"><use href="#i-close"/></svg></button>
+        </div>
+        <div id="catList" class="cat-list"></div>
+        <div class="avatar-own">
+          <label for="catNewName">New category</label>
+          <div class="avatar-own-row">
+            <input id="catNewName" type="text" placeholder="Shopping, work, throwaway…" maxlength="40" spellcheck="false" />
+            <button class="icon-btn" id="catCreate"><svg class="ic"><use href="#i-check"/></svg>Create</button>
+          </div>
+          <div class="color-row" id="catColors"></div>
+        </div>
+      </div>
+    </div>
+
 <!-- Inbox drawer -->
 <div id="drawer" class="drawer hidden" aria-hidden="true">
   <div class="drawer-backdrop" data-close-drawer></div>
@@ -282,25 +302,6 @@
       <button class="icon-btn" id="bwAvatar" title="Pick a generated avatar and drop it into the upload field">
         <svg class="ic"><use href="#i-globe"/></svg>Avatar
       </button>
-    </div>
-    <div id="catModal" class="avatar-modal hidden">
-      <div class="avatar-backdrop" data-close-cat></div>
-      <div class="avatar-panel narrow-panel">
-        <div class="avatar-head">
-          <b>Move <span id="catCount">0</span> selected</b>
-          <span class="spacer"></span>
-          <button class="icon-btn" data-close-cat><svg class="ic"><use href="#i-close"/></svg></button>
-        </div>
-        <div id="catList" class="cat-list"></div>
-        <div class="avatar-own">
-          <label for="catNewName">New category</label>
-          <div class="avatar-own-row">
-            <input id="catNewName" type="text" placeholder="Shopping, work, throwaway…" maxlength="40" spellcheck="false" />
-            <button class="icon-btn" id="catCreate"><svg class="ic"><use href="#i-check"/></svg>Create</button>
-          </div>
-          <div class="color-row" id="catColors"></div>
-        </div>
-      </div>
     </div>
     <div id="avatarModal" class="avatar-modal hidden">
       <div class="avatar-backdrop" data-close-avatar></div>

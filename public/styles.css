@@ -328,6 +328,7 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 
 /* --- categories --- */
+#catModal { position: fixed; }
 .cat-filter {
   caption-side: top; text-align: left; padding: 0 0 10px;
   display: flex; gap: 6px; flex-wrap: wrap;
