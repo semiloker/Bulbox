@@ -8,6 +8,8 @@ const state = {
   selected: new Set(),
   revealed: new Set(),
   filter: '',
+  categories: [],
+  catFilter: null,
   generating: false,
   genOff: null,
   drawerId: null,
@@ -63,6 +65,30 @@ function makeHttpApi() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, nickname }),
+      }).then(json);
+      if (r.error) throw new Error(r.error);
+      return r;
+    },
+    upsertCategory: async (cat) => {
+      const r = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cat),
+      }).then(json);
+      if (r.error) throw new Error(r.error);
+      return r.categories;
+    },
+    removeCategory: (id) =>
+      fetch('/api/categories/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      }).then(json),
+    assignCategory: async (ids, categoryId) => {
+      const r = await fetch('/api/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, categoryId }),
       }).then(json);
       if (r.error) throw new Error(r.error);
       return r;
@@ -150,6 +176,159 @@ async function copy(text) {
   }
 }
 
+// ---------- categories ----------
+// A category is a name and a colour. Rows carry the colour so a glance is enough.
+const CATEGORY_COLORS = [
+  '#6d5efc',
+  '#22a06b',
+  '#e5484d',
+  '#f5a623',
+  '#0ea5e9',
+  '#d946ef',
+  '#14b8a6',
+  '#8b8fa3',
+];
+let pickedColor = CATEGORY_COLORS[0];
+
+const categoryById = (id) => state.categories.find((c) => c.id === id) || null;
+
+function renderCategoryFilter() {
+  const bar = $('#catFilter');
+  bar.innerHTML = '';
+  if (!state.categories.length) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+
+  const chip = (label, id, color) => {
+    const b = document.createElement('button');
+    b.className = 'cat-chip' + (state.catFilter === id ? ' active' : '');
+    b.textContent = label;
+    if (color) b.style.setProperty('--chip', color);
+    b.addEventListener('click', () => {
+      state.catFilter = state.catFilter === id ? null : id;
+      renderCategoryFilter();
+      renderRows();
+    });
+    return b;
+  };
+
+  bar.appendChild(chip('All', null, null));
+  for (const c of state.categories) {
+    const count = state.identities.filter((i) => i.category === c.id).length;
+    bar.appendChild(chip(`${c.name} · ${count}`, c.id, c.color));
+  }
+  const none = state.identities.filter((i) => !i.category).length;
+  if (none) bar.appendChild(chip(`Uncategorised · ${none}`, '__none', null));
+}
+
+function renderCategoryPicker() {
+  const list = $('#catList');
+  list.innerHTML = '';
+
+  const row = (label, color, onPick, cat) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'cat-row';
+    const pick = document.createElement('button');
+    pick.className = 'cat-pick';
+    pick.innerHTML = `<span class="cat-dot" style="background:${color || 'transparent'};${
+      color ? '' : 'border:1px dashed var(--border)'
+    }"></span><span></span>`;
+    pick.lastElementChild.textContent = label;
+    pick.addEventListener('click', onPick);
+    wrap.appendChild(pick);
+    if (cat) {
+      const del = document.createElement('button');
+      del.className = 'copy';
+      del.title = 'Delete this category';
+      del.innerHTML = icon('i-trash');
+      del.addEventListener('click', async () => {
+        if (!confirm(`Delete the category "${cat.name}"? The inboxes in it stay, they just lose the label.`)) return;
+        try {
+          const r = await api.removeCategory(cat.id);
+          state.categories = r.categories;
+          if (state.catFilter === cat.id) state.catFilter = null;
+          await loadIdentities();
+          renderCategoryPicker();
+          renderCategoryFilter();
+          toast('Category deleted');
+        } catch (e) {
+          toast(e.message || 'Could not delete it', false);
+        }
+      });
+      wrap.appendChild(del);
+    }
+    list.appendChild(wrap);
+  };
+
+  row('No category', null, () => applyCategory(null));
+  for (const c of state.categories) row(c.name, c.color, () => applyCategory(c.id), c);
+}
+
+function renderColorChoices() {
+  const box = $('#catColors');
+  box.innerHTML = '';
+  for (const color of CATEGORY_COLORS) {
+    const b = document.createElement('button');
+    b.className = 'color-dot' + (color === pickedColor ? ' active' : '');
+    b.style.background = color;
+    b.title = color;
+    b.addEventListener('click', () => {
+      pickedColor = color;
+      renderColorChoices();
+    });
+    box.appendChild(b);
+  }
+}
+
+function openCategoryPicker() {
+  if (!state.selected.size) return toast('Select some inboxes first', false);
+  $('#catCount').textContent = state.selected.size;
+  renderCategoryPicker();
+  renderColorChoices();
+  $('#catNewName').value = '';
+  $('#catModal').classList.remove('hidden');
+}
+function closeCategoryPicker() {
+  $('#catModal').classList.add('hidden');
+}
+
+async function applyCategory(categoryId) {
+  const ids = [...state.selected];
+  try {
+    const r = await api.assignCategory(ids, categoryId);
+    await loadIdentities();
+    renderCategoryFilter();
+    closeCategoryPicker();
+    const name = categoryId ? categoryById(categoryId)?.name : 'no category';
+    toast(`${r.changed} moved to ${name}`);
+  } catch (e) {
+    toast(e.message || 'Could not move them', false);
+  }
+}
+
+async function createCategory() {
+  const name = $('#catNewName').value.trim();
+  if (!name) return;
+  try {
+    state.categories = await api.upsertCategory({ name, color: pickedColor });
+    $('#catNewName').value = '';
+    renderCategoryPicker();
+    renderCategoryFilter();
+    toast('Category created');
+  } catch (e) {
+    toast(e.message || 'Could not create it', false);
+  }
+}
+
+$('#categoryBtn').addEventListener('click', openCategoryPicker);
+$('#catCreate').addEventListener('click', createCategory);
+$('#catNewName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') createCategory();
+});
+$$('[data-close-cat]').forEach((el) => el.addEventListener('click', closeCategoryPicker));
+
 // ---------- navigation ----------
 function showView(name) {
   $$('.view').forEach((v) => v.classList.add('hidden'));
@@ -162,8 +341,11 @@ $$('[data-goto]').forEach((b) => b.addEventListener('click', () => showView(b.da
 // ---------- identities table ----------
 function filtered() {
   const f = state.filter.trim().toLowerCase();
-  if (!f) return state.identities;
-  return state.identities.filter(
+  let list = state.identities;
+  if (state.catFilter === '__none') list = list.filter((i) => !i.category);
+  else if (state.catFilter) list = list.filter((i) => i.category === state.catFilter);
+  if (!f) return list;
+  return list.filter(
     (i) => i.email.toLowerCase().includes(f) || i.nickname.toLowerCase().includes(f)
   );
 }
@@ -176,9 +358,14 @@ function renderRows() {
     const revealed = state.revealed.has(it.id);
     const tr = document.createElement('tr');
     tr.dataset.id = it.id;
+    const cat = categoryById(it.category);
+    if (cat) {
+      tr.dataset.cat = cat.id;
+      tr.style.setProperty('--row-tint', cat.color);
+    }
     tr.innerHTML = `
       <td class="col-check"><input type="checkbox" class="rowcheck" ${state.selected.has(it.id) ? 'checked' : ''}></td>
-      <td><span class="cell-copy"><span class="mono">${esc(it.email)}</span>
+      <td><span class="cell-copy">${cat ? '<span class="cat-dot" title="' + esc(cat.name) + '" style="background:' + esc(cat.color) + '"></span>' : ''}<span class="mono">${esc(it.email)}</span>
         <button class="copy" data-copy="${esc(it.email)}" title="Copy email">${icon('i-copy')}</button></span></td>
       <td><span class="cell-copy"><span class="nickname">${esc(it.nickname)}</span>
         <button class="copy edit-nick" title="Rename">${icon('i-pencil')}</button>
@@ -203,6 +390,8 @@ function updateCounts() {
   $('#navCount').textContent = state.identities.length;
   const n = state.selected.size;
   $('#deleteSelBtn').disabled = n === 0;
+  $('#categoryBtn').disabled = n === 0;
+  $('#catLabel').textContent = n ? 'Category (' + n + ')' : 'Category';
   $('#delLabel').textContent = n ? `Delete (${n})` : 'Delete';
   const visible = filtered();
   $('#selectAll').checked = visible.length > 0 && visible.every((i) => state.selected.has(i.id));
@@ -319,10 +508,12 @@ async function deleteIds(ids) {
 
 async function loadIdentities() {
   const data = await api.listIdentities();
+  state.categories = data.categories || [];
   state.identities = (data.identities || []).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   state.settings = data.settings || state.settings;
   const ids = new Set(state.identities.map((i) => i.id));
   state.selected = new Set([...state.selected].filter((id) => ids.has(id)));
+  renderCategoryFilter();
   renderRows();
 }
 
