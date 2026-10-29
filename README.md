@@ -22,7 +22,7 @@ button that opens it:
 
 ```
 <home>/
-  data/       emails.json, backups/, profiles/
+  data/       emails.json, backups/, profiles/, macros/
   sessions/   per-email cookies and logins
   tor/        Tor's data directory
 ```
@@ -118,12 +118,37 @@ on the blocklists. The domain buys you a clean start, not immunity.
   You can also point it at a picture you chose yourself: paste an image link or pick a file
   from disk (5 MB cap, image content types only). It fetches exactly the one URL you give it
   — there is no crawler here, and whether you may use a given picture is on you.
+- **Mail** (in the browser panel) — opens this inbox on top of the page, so a verification code
+  can be copied without leaving it.
 - **Fill** — puts this identity's handle, email and password into the login form on the page
   you are looking at. It fills and stops; submitting stays your call. Sessions are already
   persistent, so this is for the first sign-in, not for every visit.
 
 **Generate** makes up to 500 at a time with a live progress bar, auto-throttling and retrying to
 respect mail.tm's rate limit (~8 requests/second).
+
+## Macros (record & replay)
+
+**Record macro** (bottom of the sidebar, or **Record** in an email's browser panel) captures your
+mouse and keyboard everywhere in the app — the app's own screens *and* inside the browser panel —
+until you press **Stop**. Each recording is saved to `data/macros/` and listed under **Macros**,
+where you can rename it, delete it, **Play** it back at 0.5×–4×, or **Run on…** other inboxes.
+
+- **Playback starts where the recording did.** It goes back to the same screen, reopens the same
+  email's browser on the same page, and sizes the window the way it was — clicks are replayed as
+  positions, so a different layout would send them somewhere else.
+- **Run on…** takes a macro recorded in an email's browser and plays it in every inbox you pick —
+  all of them, the ones ticked on the Inboxes screen, or a category — one after another. Each run
+  opens that inbox's own browser (its own session, and its own Tor exit when Tor is on) on the
+  page the macro started on. Click **Fill**, **Avatar** or **Mail** while recording instead of
+  typing an address: on replay they act for whichever inbox is playing.
+- **It waits for pages.** Inside the browser, replay pauses while a page is still loading (up to
+  15 s), so a slow Tor circuit doesn't make it click on a half-loaded page.
+- **Esc or Stop** ends playback, a whole run included. Your own mouse and keyboard still work
+  while a macro plays, so keep off the window or your input mixes into it. A dot shows where
+  replayed clicks go.
+- Typing replays as text, so non-Latin layouts work; a recorded **Ctrl+V** pastes whatever is on
+  the clipboard at playback time. Desktop app only — the web version can't replay input.
 
 ## Per-email exit IP (Tor)
 
@@ -182,6 +207,7 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 |------|------------|
 | `electron/main.cjs` | Electron main process — IPC handlers, per-email sessions, Tor proxying |
 | `electron/preload.cjs` | secure bridge exposing `window.forge` to the UI |
+| `electron/capture-preload.cjs` | reports mouse/keyboard input to the main process while a macro records |
 | `providers/index.js` | picks the backend per identity, hides mail.tm's tokens |
 | `providers/mailtm.js` | mail.tm / mail.gw API adapter |
 | `providers/tempmailio.js` | temp-mail.io API adapter (8 public domains) |
@@ -191,6 +217,7 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 | `lib/db.js` | atomic JSON storage + backups |
 | `lib/generate.js` | handle / address / password generators |
 | `lib/tor.js` | local Tor manager (SocksPort pool, one exit IP per email) |
+| `lib/macros.js` | macro storage (`data/macros/`) + DOM input → Electron input translation |
 | `public/` | the UI (HTML, CSS, JS) — works in Electron *and* the web server |
 | `server.js` | optional web-server mode (`npm run web`) |
 | `data/emails.json` | your database |

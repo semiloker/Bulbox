@@ -37,6 +37,26 @@ contextBridge.exposeInMainWorld('forge', {
   openBrowser: (id) => ipcRenderer.invoke('browser:open', id),
   exportData: () => ipcRenderer.invoke('data:export'),
 
+  macros: {
+    list: () => ipcRenderer.invoke('macros:list'),
+    record: (context) => ipcRenderer.invoke('macros:record', context),
+    stopRecording: () => ipcRenderer.invoke('macros:stop-record'),
+    play: (id, speed) => ipcRenderer.invoke('macros:play', { id, speed }),
+    stop: () => ipcRenderer.invoke('macros:stop'),
+    rename: (id, name) => ipcRenderer.invoke('macros:rename', { id, name }),
+    remove: (id) => ipcRenderer.invoke('macros:delete', id),
+    onProgress: (cb) => {
+      const listener = (_e, data) => cb(data);
+      ipcRenderer.on('rec:progress', listener);
+      return () => ipcRenderer.removeListener('rec:progress', listener);
+    },
+    onCursor: (cb) => {
+      const listener = (_e, data) => cb(data);
+      ipcRenderer.on('rec:cursor', listener);
+      return () => ipcRenderer.removeListener('rec:cursor', listener);
+    },
+  },
+
   net: {
     status: () => ipcRenderer.invoke('net:status'),
     start: () => ipcRenderer.invoke('net:start'),

@@ -20,6 +20,9 @@
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></symbol>
+  <symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
 </svg>
 
 <div class="app">
@@ -32,11 +35,13 @@
     <nav class="nav">
       <button class="nav-item active" data-view="identities"><svg class="ic"><use href="#i-inboxes"/></svg><span>Inboxes</span><span class="pill" id="navCount">0</span></button>
       <button class="nav-item" data-view="generate"><svg class="ic"><use href="#i-bolt"/></svg><span>Generate</span></button>
+      <button class="nav-item hidden" data-view="macros" id="navMacros"><svg class="ic"><use href="#i-record"/></svg><span>Macros</span><span class="pill" id="macroCount">0</span></button>
       <button class="nav-item" data-view="settings"><svg class="ic"><use href="#i-gear"/></svg><span>Settings</span></button>
     </nav>
 
     <div class="sidebar-foot">
       <button class="ghost small" id="themeToggle" title="Toggle theme"><svg class="ic"><use href="#i-moon"/></svg><span id="themeLabel">System</span></button>
+      <button class="ghost small hidden" id="recBtn" data-rec-ui title="Record your mouse and keyboard from here, anywhere in the app"><svg class="ic rec-ic"><use href="#i-record"/></svg><span>Record macro</span></button>
     </div>
   </aside>
 
@@ -137,6 +142,63 @@
           </div>
           <div class="log" id="genLog"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ MACROS ============ -->
+    <section id="view-macros" class="view hidden">
+      <header class="view-head">
+        <div>
+          <h1>Macros</h1>
+          <p class="sub">Record your mouse and keyboard anywhere in the app — including inside an email's browser — and play it back.</p>
+        </div>
+        <div class="head-actions">
+          <label class="speed-pick" for="macroSpeed">Speed
+            <select id="macroSpeed">
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+            </select>
+          </label>
+          <button class="primary" id="macroRecord" data-rec-ui><svg class="ic"><use href="#i-record"/></svg>Record</button>
+        </div>
+      </header>
+
+      <div class="table-card">
+        <table class="grid" id="macroTable">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Starts at</th>
+              <th>Length</th>
+              <th>Events</th>
+              <th class="col-when">Recorded</th>
+              <th class="col-act"></th>
+            </tr>
+          </thead>
+          <tbody id="macroRows"></tbody>
+        </table>
+        <div id="macroEmpty" class="empty">
+          <svg class="ic big"><use href="#i-record"/></svg>
+          <p>No macros yet. Press <b>Record macro</b> in the sidebar on any screen, do the thing, then <b>Stop</b>.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>Playback</b> first goes back to where the recording started — the same screen, and the
+        same email's browser on the same page — and sizes the window the way it was, because clicks
+        are replayed as positions. If a page lays out differently, a click lands somewhere else.
+        In the browser it waits for each page to finish loading before going on.
+        <br><br>
+        <b>Run on…</b> plays a macro recorded in a browser on every inbox you pick, one after another:
+        each opens its own browser, goes to the page the macro started on and plays it there. Use
+        <b>Fill</b>, <b>Avatar</b> and <b>Mail</b> while recording rather than typing an address — on
+        replay they act for whichever inbox is playing.
+        <br><br>
+        <b>Esc</b> or <b>Stop</b> ends playback. Don't type or move the mouse over the window while a
+        macro plays — your input mixes into it. A recorded <b>Ctrl+V</b> pastes whatever is on the
+        clipboard at the time. Macros are saved under <code>data/macros/</code> in the data folder.
       </div>
     </section>
 
@@ -255,6 +317,21 @@
       </div>
     </div>
 
+    <div id="runModal" class="avatar-modal hidden" data-rec-ui>
+      <div class="avatar-backdrop" data-close-run></div>
+      <div class="avatar-panel narrow-panel">
+        <div class="avatar-head">
+          <b>Run “<span id="runName"></span>” on…</b>
+          <span class="spacer"></span>
+          <button class="icon-btn" data-close-run><svg class="ic"><use href="#i-close"/></svg></button>
+        </div>
+        <div id="runList" class="cat-list"></div>
+        <small class="run-note">One inbox after another. Each gets its own browser — its own session
+          and, with Tor on, its own exit IP — opens the page the macro started on and plays it.
+          Esc or Stop ends the whole run.</small>
+      </div>
+    </div>
+
 <!-- Inbox drawer -->
 <div id="drawer" class="drawer hidden" aria-hidden="true">
   <div class="drawer-backdrop" data-close-drawer></div>
@@ -281,6 +358,7 @@
       <div class="drawer-title"><svg class="ic"><use href="#i-globe"/></svg><span id="browserEmail">browser</span></div>
       <div class="drawer-actions">
         <span class="net-chip" id="bwNet">direct</span>
+        <button class="ghost small hidden" id="bwRecord" data-rec-ui title="Record a macro that starts on this page"><svg class="ic rec-ic"><use href="#i-record"/></svg>Record</button>
         <button class="ghost small" data-close-browser><svg class="ic"><use href="#i-close"/></svg></button>
       </div>
     </div>
@@ -301,6 +379,9 @@
       </button>
       <button class="icon-btn" id="bwAvatar" title="Pick a generated avatar and drop it into the upload field">
         <svg class="ic"><use href="#i-globe"/></svg>Avatar
+      </button>
+      <button class="icon-btn" id="bwMail" title="Read this email's inbox without closing the browser">
+        <svg class="ic"><use href="#i-mail"/></svg>Mail
       </button>
     </div>
     <div id="avatarModal" class="avatar-modal hidden">
@@ -338,6 +419,27 @@
   </div>
 </div>
 
+<div id="confirmModal" class="avatar-modal hidden">
+  <div class="avatar-backdrop" data-confirm="no"></div>
+  <div class="avatar-panel narrow-panel confirm-panel" role="alertdialog" aria-modal="true" aria-labelledby="confirmText">
+    <p id="confirmText"></p>
+    <div class="confirm-actions">
+      <button class="ghost" data-confirm="no">Cancel</button>
+      <button class="danger" id="confirmOk" data-confirm="yes">Delete</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
+
+<!-- Macro recorder status. Sits where the sidebar foot is, the same size while
+     recording and playing, so a replayed click can never land on it. -->
+<div id="recBar" class="rec-bar hidden" data-rec-ui role="status" aria-live="polite">
+  <span class="rec-dot"></span>
+  <div class="rec-text"><b id="recLabel">Recording</b><span id="recTime">0:00</span></div>
+  <button class="rec-stop" id="recStop" title="Stop"><svg class="ic"><use href="#i-stop"/></svg>Stop</button>
+  <div class="rec-progress" id="recProgress"></div>
+</div>
+<div id="recCursor" class="rec-cursor hidden" aria-hidden="true"></div>
 
 <script src="app.js"></script>
