@@ -53,6 +53,7 @@ Switchable in **Settings**:
 | **mail.gw** | none | 5 | same operator, domains that read like real businesses |
 | **temp-mail.io** | none | 8 | biggest free pool; anyone who knows the address can read it |
 | **5minmail** | none | 1 (`zelnro.com`) | youngest domain, so the least blocked today — but see below |
+| **DuckDuckGo** | ~2 min | `duck.com` | private aliases on your own Duck account; mail goes to your real mailbox |
 | **Own domain** | ~10 min | yours | permanent, not recognisable as throwaway |
 
 Generation spreads addresses across **every** domain a backend offers, round-robin, rather
@@ -69,6 +70,22 @@ signup where you read the code immediately; useless for an account you want to k
 No public temp-mail service is unblockable: their domains are on the same lists, and the
 only real difference is how well known each one is. If sites keep rejecting you, the fix is
 your own domain, not another provider.
+
+### Setting up DuckDuckGo
+
+Addresses are private aliases on **your own** [Duck account](https://duckduckgo.com/email); the
+app does not create Duck accounts.
+
+1. Sign in at [duckduckgo.com/email](https://duckduckgo.com/email), open DevTools → **Network**,
+   and click **Generate Private Duck Address**.
+2. Open the `addresses` request and copy the value of its `Authorization` header.
+3. **Settings → Provider → DuckDuckGo**, paste it in, and **Save**.
+
+The endpoint is the one Duck's extension and Bitwarden use; it isn't a public API with published
+limits. A rejected token or a rate limit stops the run. The app **can't read this mail** (it
+arrives in the mailbox behind your Duck account), so the Mail panel just says so. Deleting a row
+only removes it here: the alias keeps forwarding until you turn it off with Duck. The stored
+password is for the sites you sign up to, not a login for the address.
 
 ### Setting up your own domain
 
@@ -212,6 +229,7 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 | `providers/mailtm.js` | mail.tm / mail.gw API adapter |
 | `providers/tempmailio.js` | temp-mail.io API adapter (8 public domains) |
 | `providers/fiveminmail.js` | 5minmail adapter — assigns its own addresses, 5 min inboxes |
+| `providers/duckduckgo.js` | DuckDuckGo adapter — private aliases on your own Duck account |
 | `providers/domain.js` | own-domain adapter — talks to the worker |
 | `worker/` | Cloudflare Email Worker + D1 schema (deployed separately) |
 | `lib/db.js` | atomic JSON storage + backups |

@@ -1516,6 +1516,7 @@ async function loadSettings() {
     $('#ownDomain').value = s.domain || '';
     $('#mailApi').value = s.mailApi || '';
     $('#mailToken').value = s.mailToken || '';
+    $('#duckToken').value = s.duckToken || '';
     $('#throttle').value = s.throttleMs || 500;
     $('#torEnabled').checked = !!s.torEnabled;
     $('#torPath').value = s.torPath || '';
@@ -1531,9 +1532,10 @@ async function loadSettings() {
   refreshTorStatus();
   warmTor();
 }
-// The own-domain fields are noise unless that provider is selected.
+// The own-domain and Duck fields are noise unless that provider is selected.
 function updateProviderVisibility() {
   $('#domainFields').classList.toggle('hidden', $('#provider').value !== 'domain');
+  $('#duckFields').classList.toggle('hidden', $('#provider').value !== 'duckduckgo');
 }
 $('#provider').addEventListener('change', updateProviderVisibility);
 
@@ -1615,6 +1617,7 @@ $('#saveSettings').addEventListener('click', async () => {
       domain: $('#ownDomain').value,
       mailApi: $('#mailApi').value,
       mailToken: $('#mailToken').value,
+      duckToken: $('#duckToken').value,
       throttleMs: $('#throttle').value,
       torEnabled: $('#torEnabled').checked,
       torPath: $('#torPath').value,

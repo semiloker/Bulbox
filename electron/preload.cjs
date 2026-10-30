@@ -1,24 +1,30 @@
 // electron/preload.cjs — safe bridge between the renderer UI and the main process.
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Electron prefixes every error from the main process; the UI shows these to people.
+const invoke = (channel, ...args) =>
+  ipcRenderer.invoke(channel, ...args).catch((err) => {
+    throw new Error(err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+  });
+
 contextBridge.exposeInMainWorld('forge', {
-  listIdentities: () => ipcRenderer.invoke('db:list'),
-  getSettings: () => ipcRenderer.invoke('settings:get'),
-  saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
-  getDomains: () => ipcRenderer.invoke('domains:get'),
-  getHome: () => ipcRenderer.invoke('home:get'),
-  appVersion: () => ipcRenderer.invoke('app:version'),
-  checkUpdate: () => ipcRenderer.invoke('update:check'),
-  installUpdate: () => ipcRenderer.invoke('update:install'),
+  listIdentities: () => invoke('db:list'),
+  getSettings: () => invoke('settings:get'),
+  saveSettings: (patch) => invoke('settings:save', patch),
+  getDomains: () => invoke('domains:get'),
+  getHome: () => invoke('home:get'),
+  appVersion: () => invoke('app:version'),
+  checkUpdate: () => invoke('update:check'),
+  installUpdate: () => invoke('update:install'),
   onUpdateState: (cb) => {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on('update:state', listener);
     return () => ipcRenderer.removeListener('update:state', listener);
   },
-  openHome: () => ipcRenderer.invoke('home:open'),
-  testMail: (patch) => ipcRenderer.invoke('settings:test', patch),
+  openHome: () => invoke('home:open'),
+  testMail: (patch) => invoke('settings:test', patch),
 
-  generate: (opts) => ipcRenderer.invoke('generate:run', opts),
+  generate: (opts) => invoke('generate:run', opts),
   cancelGenerate: () => ipcRenderer.send('generate:cancel'),
   onGenerateProgress: (cb) => {
     const listener = (_e, data) => cb(data);
@@ -26,25 +32,25 @@ contextBridge.exposeInMainWorld('forge', {
     return () => ipcRenderer.removeListener('generate:progress', listener);
   },
 
-  deleteIdentities: (ids) => ipcRenderer.invoke('db:delete', ids),
-  upsertCategory: (cat) => ipcRenderer.invoke('categories:upsert', cat),
-  removeCategory: (id) => ipcRenderer.invoke('categories:remove', id),
-  assignCategory: (ids, categoryId) => ipcRenderer.invoke('categories:assign', { ids, categoryId }),
-  renameIdentity: (id, nickname) => ipcRenderer.invoke('db:rename', { id, nickname }),
-  fetchImage: (url) => ipcRenderer.invoke('avatar:fetch', url),
-  openInbox: (id) => ipcRenderer.invoke('inbox:open', id),
-  openMessage: (id, mid) => ipcRenderer.invoke('message:open', { id, mid }),
-  openBrowser: (id) => ipcRenderer.invoke('browser:open', id),
-  exportData: () => ipcRenderer.invoke('data:export'),
+  deleteIdentities: (ids) => invoke('db:delete', ids),
+  upsertCategory: (cat) => invoke('categories:upsert', cat),
+  removeCategory: (id) => invoke('categories:remove', id),
+  assignCategory: (ids, categoryId) => invoke('categories:assign', { ids, categoryId }),
+  renameIdentity: (id, nickname) => invoke('db:rename', { id, nickname }),
+  fetchImage: (url) => invoke('avatar:fetch', url),
+  openInbox: (id) => invoke('inbox:open', id),
+  openMessage: (id, mid) => invoke('message:open', { id, mid }),
+  openBrowser: (id) => invoke('browser:open', id),
+  exportData: () => invoke('data:export'),
 
   macros: {
-    list: () => ipcRenderer.invoke('macros:list'),
-    record: (context) => ipcRenderer.invoke('macros:record', context),
-    stopRecording: () => ipcRenderer.invoke('macros:stop-record'),
-    play: (id, speed) => ipcRenderer.invoke('macros:play', { id, speed }),
-    stop: () => ipcRenderer.invoke('macros:stop'),
-    rename: (id, name) => ipcRenderer.invoke('macros:rename', { id, name }),
-    remove: (id) => ipcRenderer.invoke('macros:delete', id),
+    list: () => invoke('macros:list'),
+    record: (context) => invoke('macros:record', context),
+    stopRecording: () => invoke('macros:stop-record'),
+    play: (id, speed) => invoke('macros:play', { id, speed }),
+    stop: () => invoke('macros:stop'),
+    rename: (id, name) => invoke('macros:rename', { id, name }),
+    remove: (id) => invoke('macros:delete', id),
     onProgress: (cb) => {
       const listener = (_e, data) => cb(data);
       ipcRenderer.on('rec:progress', listener);
@@ -58,10 +64,10 @@ contextBridge.exposeInMainWorld('forge', {
   },
 
   net: {
-    status: () => ipcRenderer.invoke('net:status'),
-    start: () => ipcRenderer.invoke('net:start'),
-    apply: (id) => ipcRenderer.invoke('net:apply', id),
-    clear: (id) => ipcRenderer.invoke('net:clear', id),
-    transports: () => ipcRenderer.invoke('net:transports'),
+    status: () => invoke('net:status'),
+    start: () => invoke('net:start'),
+    apply: (id) => invoke('net:apply', id),
+    clear: (id) => invoke('net:clear', id),
+    transports: () => invoke('net:transports'),
   },
 });

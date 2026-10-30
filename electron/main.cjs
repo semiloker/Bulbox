@@ -507,6 +507,7 @@ function registerIpc() {
     if (patch.domain !== undefined) p.domain = String(patch.domain || '').trim().toLowerCase();
     if (patch.mailApi !== undefined) p.mailApi = String(patch.mailApi || '').trim();
     if (patch.mailToken !== undefined) p.mailToken = String(patch.mailToken || '').trim();
+    if (patch.duckToken !== undefined) p.duckToken = String(patch.duckToken || '').trim();
     if (typeof patch.torEnabled === 'boolean') p.torEnabled = patch.torEnabled;
     if (patch.torPath !== undefined) p.torPath = String(patch.torPath || '');
     if (patch.torBridgeMode) p.torBridgeMode = patch.torBridgeMode === 'bridges' ? 'bridges' : 'none';
@@ -602,7 +603,7 @@ function registerIpc() {
           : `${provider} has no domains available right now. Try again shortly.`
       );
     }
-    const throttleMs = assigned
+    const throttleMs = provider === '5minmail'
       ? 5200 // 5minmail allows one new address every 5 seconds
       : provider === 'domain'
         ? 0 // a catch-all domain accepts every address offline: nothing to rate-limit
@@ -647,6 +648,7 @@ function registerIpc() {
           break;
         } catch (err) {
           lastErr = err;
+          if (err.fatal) throw err;
           if (err.status === 422) continue;
           await sleep(600 * (attempt + 1));
         }
