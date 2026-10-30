@@ -22,7 +22,7 @@ button that opens it:
 
 ```
 <home>/
-  data/       emails.json, backups/, profiles/
+  data/       emails.json, backups/, profiles/, macros/
   sessions/   per-email cookies and logins
   tor/        Tor's data directory
 ```
@@ -53,6 +53,7 @@ Switchable in **Settings**:
 | **mail.gw** | none | 5 | same operator, domains that read like real businesses |
 | **temp-mail.io** | none | 8 | biggest free pool; anyone who knows the address can read it |
 | **5minmail** | none | 1 (`zelnro.com`) | youngest domain, so the least blocked today — but see below |
+| **DuckDuckGo** | ~2 min | `duck.com` | private aliases on your own Duck account; mail goes to your real mailbox |
 | **Own domain** | ~10 min | yours | permanent, not recognisable as throwaway |
 
 Generation spreads addresses across **every** domain a backend offers, round-robin, rather
@@ -69,6 +70,22 @@ signup where you read the code immediately; useless for an account you want to k
 No public temp-mail service is unblockable: their domains are on the same lists, and the
 only real difference is how well known each one is. If sites keep rejecting you, the fix is
 your own domain, not another provider.
+
+### Setting up DuckDuckGo
+
+Addresses are private aliases on **your own** [Duck account](https://duckduckgo.com/email); the
+app does not create Duck accounts.
+
+1. Sign in at [duckduckgo.com/email](https://duckduckgo.com/email), open DevTools → **Network**,
+   and click **Generate Private Duck Address**.
+2. Open the `addresses` request and copy the value of its `Authorization` header.
+3. **Settings → Provider → DuckDuckGo**, paste it in, and **Save**.
+
+The endpoint is the one Duck's extension and Bitwarden use; it isn't a public API with published
+limits. A rejected token or a rate limit stops the run. The app **can't read this mail** (it
+arrives in the mailbox behind your Duck account), so the Mail panel just says so. Deleting a row
+only removes it here: the alias keeps forwarding until you turn it off with Duck. The stored
+password is for the sites you sign up to, not a login for the address.
 
 ### Setting up your own domain
 
@@ -118,12 +135,37 @@ on the blocklists. The domain buys you a clean start, not immunity.
   You can also point it at a picture you chose yourself: paste an image link or pick a file
   from disk (5 MB cap, image content types only). It fetches exactly the one URL you give it
   — there is no crawler here, and whether you may use a given picture is on you.
+- **Mail** (in the browser panel) — opens this inbox on top of the page, so a verification code
+  can be copied without leaving it.
 - **Fill** — puts this identity's handle, email and password into the login form on the page
   you are looking at. It fills and stops; submitting stays your call. Sessions are already
   persistent, so this is for the first sign-in, not for every visit.
 
 **Generate** makes up to 500 at a time with a live progress bar, auto-throttling and retrying to
 respect mail.tm's rate limit (~8 requests/second).
+
+## Macros (record & replay)
+
+**Record macro** (bottom of the sidebar, or **Record** in an email's browser panel) captures your
+mouse and keyboard everywhere in the app — the app's own screens *and* inside the browser panel —
+until you press **Stop**. Each recording is saved to `data/macros/` and listed under **Macros**,
+where you can rename it, delete it, **Play** it back at 0.5×–4×, or **Run on…** other inboxes.
+
+- **Playback starts where the recording did.** It goes back to the same screen, reopens the same
+  email's browser on the same page, and sizes the window the way it was — clicks are replayed as
+  positions, so a different layout would send them somewhere else.
+- **Run on…** takes a macro recorded in an email's browser and plays it in every inbox you pick —
+  all of them, the ones ticked on the Inboxes screen, or a category — one after another. Each run
+  opens that inbox's own browser (its own session, and its own Tor exit when Tor is on) on the
+  page the macro started on. Click **Fill**, **Avatar** or **Mail** while recording instead of
+  typing an address: on replay they act for whichever inbox is playing.
+- **It waits for pages.** Inside the browser, replay pauses while a page is still loading (up to
+  15 s), so a slow Tor circuit doesn't make it click on a half-loaded page.
+- **Esc or Stop** ends playback, a whole run included. Your own mouse and keyboard still work
+  while a macro plays, so keep off the window or your input mixes into it. A dot shows where
+  replayed clicks go.
+- Typing replays as text, so non-Latin layouts work; a recorded **Ctrl+V** pastes whatever is on
+  the clipboard at playback time. Desktop app only — the web version can't replay input.
 
 ## Per-email exit IP (Tor)
 
@@ -182,15 +224,18 @@ identity with an in-app terminal, sharing that email's Tor circuit.
 |------|------------|
 | `electron/main.cjs` | Electron main process — IPC handlers, per-email sessions, Tor proxying |
 | `electron/preload.cjs` | secure bridge exposing `window.forge` to the UI |
+| `electron/capture-preload.cjs` | reports mouse/keyboard input to the main process while a macro records |
 | `providers/index.js` | picks the backend per identity, hides mail.tm's tokens |
 | `providers/mailtm.js` | mail.tm / mail.gw API adapter |
 | `providers/tempmailio.js` | temp-mail.io API adapter (8 public domains) |
 | `providers/fiveminmail.js` | 5minmail adapter — assigns its own addresses, 5 min inboxes |
+| `providers/duckduckgo.js` | DuckDuckGo adapter — private aliases on your own Duck account |
 | `providers/domain.js` | own-domain adapter — talks to the worker |
 | `worker/` | Cloudflare Email Worker + D1 schema (deployed separately) |
 | `lib/db.js` | atomic JSON storage + backups |
 | `lib/generate.js` | handle / address / password generators |
 | `lib/tor.js` | local Tor manager (SocksPort pool, one exit IP per email) |
+| `lib/macros.js` | macro storage (`data/macros/`) + DOM input → Electron input translation |
 | `public/` | the UI (HTML, CSS, JS) — works in Electron *and* the web server |
 | `server.js` | optional web-server mode (`npm run web`) |
 | `data/emails.json` | your database |

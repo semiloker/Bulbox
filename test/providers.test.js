@@ -152,4 +152,37 @@ await assert.rejects(() => mail.listMessages(fmm, box5), /expired/);
 reply = { status: 429, body: {} };
 await assert.rejects(() => mail.createIdentity(fmm, '', ''), /every 5 seconds/);
 
+
+// --- DuckDuckGo ---------------------------------------------------------------
+const duck = { provider: 'duckduckgo', duckToken: 'Bearer duck123' };
+const boxD = { email: 'abc-def-ghi@duck.com', provider: 'duckduckgo' };
+const fatal = (e) => e.fatal === true;
+
+reply = { status: 201, body: { address: 'ABC-def-ghi' } };
+const madeD = await mail.createIdentity(duck, '', 'pw');
+assert.equal(madeD.email, 'abc-def-ghi@duck.com', 'the address comes back without its domain');
+assert.equal(last().method, 'POST');
+assert.equal(last().auth, 'Bearer duck123', 'a pasted "Bearer " prefix is not doubled');
+assert.equal(mail.assignsAddresses(duck), true);
+assert.deepEqual(await mail.getDomains(duck), []);
+
+const beforeDuck = calls.length;
+await assert.rejects(() => mail.createIdentity({ provider: 'duckduckgo' }, '', ''), fatal);
+assert.equal(calls.length, beforeDuck, 'a missing token must not hit the network');
+
+for (const status of [401, 403, 429]) {
+  reply = { status, body: {} };
+  await assert.rejects(() => mail.createIdentity(duck, '', ''), fatal, `${status} stops the run`);
+}
+reply = { status: 500, body: {} };
+await assert.rejects(() => mail.createIdentity(duck, '', ''), (e) => e.status === 500 && !e.fatal);
+reply = { status: 200, body: {} };
+await assert.rejects(() => mail.createIdentity(duck, '', ''), /without an address/);
+
+await assert.rejects(async () => mail.listMessages(duck, boxD), /forwarded/);
+await assert.rejects(async () => mail.getMessage(duck, boxD, 'x'), /forwarded/);
+const beforeDel = calls.length;
+await mail.deleteIdentity(duck, boxD);
+assert.equal(calls.length, beforeDel, 'nothing to delete server-side');
+
 console.log('ok');

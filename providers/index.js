@@ -7,6 +7,7 @@ import * as mailtm from './mailtm.js';
 import * as tempmailio from './tempmailio.js';
 import * as fiveminmail from './fiveminmail.js';
 import * as domain from './domain.js';
+import * as duckduckgo from './duckduckgo.js';
 
 // mail.tm hands out short-lived JWTs. Mint one per address and reuse it instead
 // of paying a /token round-trip on every read; re-mint on the first 401.
@@ -42,13 +43,14 @@ const BACKENDS = {
   domain: 'domain',
   'temp-mail.io': 'tempmailio',
   '5minmail': 'fiveminmail',
+  duckduckgo: 'duckduckgo',
 };
 const backendOf = (provider) => BACKENDS[provider] || 'mailtm';
 
 // True when the backend hands you an address instead of letting you compose one.
 // The generation loop then skips the domain pool and the local-part styles.
 export const assignsAddresses = (settings) =>
-  backendOf(settings.provider || 'mail.tm') === 'fiveminmail';
+  ['fiveminmail', 'duckduckgo'].includes(backendOf(settings.provider || 'mail.tm'));
 
 const providerOf = (settings, identity) =>
   (identity && identity.provider) || settings.provider || 'mail.tm';
@@ -62,6 +64,8 @@ export async function getDomains(settings) {
       return tempmailio.getDomains();
     case 'fiveminmail':
       return fiveminmail.getDomains();
+    case 'duckduckgo':
+      return [];
     default:
       return mailtm.getDomains(provider);
   }
@@ -78,6 +82,8 @@ export async function createIdentity(settings, email, password) {
       return { email, accountId: await tempmailio.createAccount(email), expiresAt: null };
     case 'fiveminmail':
       return fiveminmail.createAccount();
+    case 'duckduckgo':
+      return duckduckgo.createAccount(settings);
     default:
       return { email, accountId: await mailtm.createAccount(provider, email, password), expiresAt: null };
   }
@@ -92,6 +98,8 @@ export async function listMessages(settings, identity) {
       return tempmailio.listMessages(identity.email);
     case 'fiveminmail':
       return fiveminmail.listMessages(identity.email);
+    case 'duckduckgo':
+      return duckduckgo.listMessages();
     default:
       return withToken(provider, identity, (t) => mailtm.listMessages(provider, t));
   }
@@ -106,6 +114,8 @@ export async function getMessage(settings, identity, id) {
       return tempmailio.getMessage(identity.email, id);
     case 'fiveminmail':
       return fiveminmail.getMessage(identity.email, id);
+    case 'duckduckgo':
+      return duckduckgo.getMessage();
     default:
       return withToken(provider, identity, (t) => mailtm.getMessage(provider, t, id));
   }
@@ -120,6 +130,8 @@ export async function deleteIdentity(settings, identity) {
       return tempmailio.deleteAccount(identity.email, identity.accountId);
     case 'fiveminmail':
       return fiveminmail.deleteAccount();
+    case 'duckduckgo':
+      return duckduckgo.deleteAccount();
     default:
       return withToken(provider, identity, (t) => mailtm.deleteAccount(provider, t, identity.accountId));
   }

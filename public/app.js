@@ -145,6 +145,28 @@ function relTime(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
+// In-app stand-in for window.confirm(). On Windows a native confirm box leaves
+// the window unable to take typed text once it closes — keys still arrive, but
+// no character is ever inserted — until focus leaves the window and comes back.
+let confirmDone = null;
+function askConfirm(message, okLabel = 'Delete') {
+  if (confirmDone) confirmDone(false);
+  $('#confirmText').textContent = message;
+  $('#confirmOk').textContent = okLabel;
+  $('#confirmModal').classList.remove('hidden');
+  $('#confirmOk').focus();
+  return new Promise((resolve) => {
+    confirmDone = (yes) => {
+      confirmDone = null;
+      $('#confirmModal').classList.add('hidden');
+      resolve(yes);
+    };
+  });
+}
+$$('[data-confirm]').forEach((el) =>
+  el.addEventListener('click', () => confirmDone && confirmDone(el.dataset.confirm === 'yes'))
+);
+
 let toastTimer;
 function toast(msg, ok = true) {
   const t = $('#toast');
@@ -244,7 +266,7 @@ function renderCategoryPicker() {
       del.title = 'Delete this category';
       del.innerHTML = icon('i-trash');
       del.addEventListener('click', async () => {
-        if (!confirm(`Delete the category "${cat.name}"? The inboxes in it stay, they just lose the label.`)) return;
+        if (!(await askConfirm(`Delete the category "${cat.name}"? The inboxes in it stay, they just lose the label.`))) return;
         try {
           const r = await api.removeCategory(cat.id);
           state.categories = r.categories;
@@ -489,7 +511,7 @@ async function openBrowser(id) {
 async function deleteIds(ids) {
   if (!ids.length) return;
   const msg = ids.length === 1 ? 'Delete this inbox?' : `Delete ${ids.length} inboxes?`;
-  if (!confirm(msg + '\nThis also removes them from the server and clears their saved browser data.')) return;
+  if (!(await askConfirm(msg + '\nThis also removes them from the server and clears their saved browser data.'))) return;
   try {
     const data = await api.deleteIdentities(ids);
     ids.forEach((id) => state.selected.delete(id));
@@ -625,6 +647,7 @@ function openDrawer() {
 function closeDrawer() {
   const d = $('#drawer');
   d.classList.add('hidden');
+  d.classList.remove('over-browser');
   d.setAttribute('aria-hidden', 'true');
   state.drawerId = null;
 }
@@ -632,8 +655,14 @@ $$('[data-close-drawer]').forEach((el) => el.addEventListener('click', closeDraw
 $('#drawerRefresh').addEventListener('click', refreshInbox);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (!$('#browserDrawer').classList.contains('hidden')) closeBrowserDrawer();
-  else if (!$('#drawer').classList.contains('hidden')) closeDrawer();
+  if (confirmDone) return confirmDone(false);
+  // While a macro plays the main process catches Escape; this covers the
+  // moments in between, when a run is opening the next inbox's browser.
+  if (macros.mode === 'playing') return stopPlayback();
+  const mail = $('#drawer');
+  if (!mail.classList.contains('hidden') && mail.classList.contains('over-browser')) closeDrawer();
+  else if (!$('#browserDrawer').classList.contains('hidden')) closeBrowserDrawer();
+  else if (!mail.classList.contains('hidden')) closeDrawer();
 });
 
 async function openInbox(id) {
@@ -892,6 +921,14 @@ async function bwFill() {
 }
 $('#bwFill').addEventListener('click', bwFill);
 
+// The inbox opens on top of the browser, so a verification code can be read
+// and copied without losing the page; closing it goes straight back.
+$('#bwMail').addEventListener('click', () => {
+  if (!bwCurrentId) return toast('Open an email browser first', false);
+  $('#drawer').classList.add('over-browser');
+  openInbox(bwCurrentId);
+});
+
 // ---------- avatars ----------
 // Drawn here, on a canvas, from the identity's handle. No network call and no
 // third-party image, so every identity gets its own picture that is unmistakably
@@ -1119,6 +1156,342 @@ $('#bwFwd').addEventListener('click', () => { try { if (bwWebview && bwWebview.c
 $('#bwReload').addEventListener('click', () => { try { if (bwWebview) bwWebview.reload(); } catch {} });
 $('#bwCheckIp').addEventListener('click', () => { if (bwWebview) try { bwWebview.loadURL('https://check.torproject.org/'); } catch {} });
 
+// ---------- macros ----------
+// Recording and playback happen in the main process, which sees input from this
+// window and from the browser panel alike. This is the screen for them, the
+// record buttons and the status bar. Desktop only: the web build can't replay.
+const macros = { list: [], mode: 'idle', started: 0, timer: null, cancelled: false };
+const VIEW_NAMES = { identities: 'Inboxes', generate: 'Generate', macros: 'Macros', settings: 'Settings' };
+
+function fmtDuration(ms) {
+  const s = Math.max(0, Math.round((ms || 0) / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function currentView() {
+  const v = $$('.view').find((el) => !el.classList.contains('hidden'));
+  return v ? v.id.replace('view-', '') : 'identities';
+}
+
+function startsAt(ctx) {
+  if (!ctx) return '—';
+  const who = (id) => {
+    const it = state.identities.find((i) => i.id === id);
+    return it ? it.nickname || it.email : 'deleted inbox';
+  };
+  if (ctx.browserId) return 'Browser · ' + who(ctx.browserId);
+  if (ctx.mailId) return 'Mail · ' + who(ctx.mailId);
+  return VIEW_NAMES[ctx.view] || ctx.view;
+}
+
+function renderMacros() {
+  const tbody = $('#macroRows');
+  tbody.innerHTML = '';
+  for (const m of macros.list) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = m.id;
+    tr.innerHTML = `
+      <td><span class="cell-copy"><span class="macro-name">${esc(m.name)}</span>
+        <button class="copy edit-macro" title="Rename">${icon('i-pencil')}</button></span></td>
+      <td class="macro-where">${esc(startsAt(m.context))}</td>
+      <td class="mono">${fmtDuration(m.duration)}</td>
+      <td class="mono">${m.count}</td>
+      <td class="col-when">${relTime(m.createdAt)}</td>
+      <td class="col-act"><span class="row-act">
+        <button class="icon-btn play-macro" title="Play it back from where it was recorded">${icon('i-play')}Play</button>
+        <button class="icon-btn run-macro" ${
+          m.context && m.context.browserId
+            ? 'title="Play it in every inbox you pick, one after another"'
+            : 'disabled title="Only a macro recorded in an email&#39;s browser can run on other inboxes"'
+        }>${icon('i-inboxes')}Run on…</button>
+        <button class="icon-btn danger-btn del-macro" title="Delete">${icon('i-trash')}</button>
+      </span></td>`;
+    tbody.appendChild(tr);
+  }
+  $('#macroTable').classList.toggle('hidden', macros.list.length === 0);
+  $('#macroEmpty').classList.toggle('show', macros.list.length === 0);
+  $('#macroCount').textContent = macros.list.length;
+}
+
+async function loadMacros() {
+  if (!IS_APP || !api.macros) return;
+  try {
+    macros.list = await api.macros.list();
+  } catch {
+    macros.list = [];
+  }
+  renderMacros();
+}
+
+function setRecMode(mode, macro) {
+  macros.mode = mode;
+  clearInterval(macros.timer);
+  const bar = $('#recBar');
+  bar.classList.toggle('hidden', mode === 'idle');
+  bar.classList.toggle('playing', mode === 'playing');
+  $('#recCursor').classList.add('hidden');
+  $$('#recBtn, #bwRecord, #macroRecord').forEach((b) => (b.disabled = mode !== 'idle'));
+  if (mode === 'recording') {
+    $('#recLabel').textContent = 'Recording';
+    bar.title = '';
+    macros.started = Date.now();
+    const tick = () => ($('#recTime').textContent = fmtDuration(Date.now() - macros.started));
+    tick();
+    macros.timer = setInterval(tick, 500);
+  } else if (mode === 'playing') {
+    $('#recLabel').textContent = macro ? macro.name : 'Playing';
+    bar.title = 'Press Esc to stop';
+    $('#recTime').textContent = 'Getting ready…';
+    $('#recProgress').style.width = '0';
+  }
+}
+
+async function startRecording() {
+  if (macros.mode !== 'idle') return;
+  const browserOpen = !$('#browserDrawer').classList.contains('hidden') && bwWebview && bwCurrentId;
+  const mailOpen = !$('#drawer').classList.contains('hidden') && state.drawerId;
+  let browserUrl = null;
+  if (browserOpen) try { browserUrl = bwWebview.getURL(); } catch {}
+  try {
+    await api.macros.record({
+      view: currentView(),
+      mailId: mailOpen ? state.drawerId : null,
+      browserId: browserOpen ? bwCurrentId : null,
+      browserUrl,
+    });
+  } catch (e) {
+    return toast(e.message || 'Could not start recording', false);
+  }
+  // The Record button keeps focus otherwise, and would swallow the first keys.
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  setRecMode('recording');
+  if (browserOpen) focusBrowser();
+}
+
+async function stopRecording() {
+  let saved = null;
+  try {
+    saved = await api.macros.stopRecording();
+  } catch (e) {
+    setRecMode('idle');
+    return toast(e.message || 'Could not save the recording', false);
+  }
+  setRecMode('idle');
+  if (!saved) return toast('Nothing was recorded', false);
+  await loadMacros();
+  toast(`Saved “${saved.name}” under Macros`);
+}
+
+function webviewReady(wv) {
+  return new Promise((resolve) => {
+    try {
+      wv.getURL(); // throws until the guest is attached and ready
+      return resolve();
+    } catch {}
+    wv.addEventListener('dom-ready', () => resolve(), { once: true });
+  });
+}
+const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
+
+// Back to where the recording began, so its first click lands on the same thing.
+async function restoreStart(ctx) {
+  ctx = ctx || {};
+  closeCategoryPicker();
+  closeAvatarPicker();
+  closeRunPicker();
+  closeDrawer();
+  showView(VIEW_NAMES[ctx.view] ? ctx.view : 'identities');
+
+  const exists = (id) => id && state.identities.some((i) => i.id === id);
+  if (ctx.browserId && !exists(ctx.browserId)) {
+    toast('The inbox this macro was recorded in is gone — browser steps will be skipped', false);
+  }
+  if (exists(ctx.browserId)) {
+    await openBrowserPanel(ctx.browserId);
+    if (ctx.browserUrl && bwWebview) {
+      const wv = bwWebview;
+      await withTimeout(webviewReady(wv), 20000);
+      try {
+        await withTimeout(wv.loadURL(ctx.browserUrl), 20000);
+      } catch {
+        /* a redirect aborts the original load; the page still arrives */
+      }
+    }
+  } else {
+    closeBrowserDrawer();
+    if (exists(ctx.mailId)) await openInbox(ctx.mailId);
+  }
+  await new Promise((r) => setTimeout(r, 300)); // let it paint before the first click
+}
+
+// Plays a macro once from where it was recorded or, given inbox ids, once in
+// each of those inboxes' browsers, one after another. Stopping any one of them
+// (Esc or Stop) ends the whole run.
+async function playMacro(id, inboxIds = null) {
+  const m = macros.list.find((x) => x.id === id);
+  if (!m) return;
+  if (macros.mode !== 'idle') return toast('Stop what is running first', false);
+  const runs = inboxIds ? inboxIds.map((browserId) => ({ ...m.context, browserId })) : [m.context];
+  const speed = Number($('#macroSpeed').value) || 1;
+  macros.cancelled = false;
+  let done = 0;
+  setRecMode('playing', m);
+  try {
+    for (let i = 0; i < runs.length && !macros.cancelled; i++) {
+      if (inboxIds) {
+        const it = state.identities.find((x) => x.id === runs[i].browserId);
+        $('#recLabel').textContent = `${i + 1}/${runs.length} · ${it ? it.nickname || it.email : 'deleted inbox'}`;
+        $('#recTime').textContent = 'Getting ready…';
+        $('#recProgress').style.width = '0';
+      }
+      await restoreStart(runs[i]);
+      if (macros.cancelled) break;
+      const r = await api.macros.play(id, speed);
+      if (!r.completed) break;
+      done++;
+    }
+    if (!inboxIds) toast(done ? `Played “${m.name}”` : `Stopped “${m.name}”`, done > 0);
+    else if (done === runs.length) toast(`Ran “${m.name}” on ${done} ${done === 1 ? 'inbox' : 'inboxes'}`);
+    else toast(`Stopped after ${done} of ${runs.length} inboxes`, false);
+  } catch (e) {
+    toast(e.message || 'Playback failed', false);
+  } finally {
+    setRecMode('idle');
+  }
+}
+
+function stopPlayback() {
+  macros.cancelled = true;
+  api.macros.stop().catch(() => {});
+}
+
+// Which inboxes a run goes through: all of them, the ones ticked on the
+// Inboxes screen, or a category.
+function openRunPicker(id) {
+  const m = macros.list.find((x) => x.id === id);
+  if (!m) return;
+  if (!state.identities.length) return toast('There are no inboxes to run it on', false);
+  $('#runName').textContent = m.name;
+  const groups = [{ label: 'All inboxes', ids: state.identities.map((i) => i.id) }];
+  const picked = state.identities.filter((i) => state.selected.has(i.id));
+  if (picked.length) groups.push({ label: 'Selected on the Inboxes screen', ids: picked.map((i) => i.id) });
+  for (const c of state.categories) {
+    const ids = state.identities.filter((i) => i.category === c.id).map((i) => i.id);
+    if (ids.length) groups.push({ label: c.name, color: c.color, ids });
+  }
+
+  const list = $('#runList');
+  list.innerHTML = '';
+  for (const g of groups) {
+    const pick = document.createElement('button');
+    pick.className = 'cat-pick';
+    pick.innerHTML = `<span class="cat-dot" style="background:${g.color || 'var(--accent)'}"></span><span></span><span class="run-count"></span>`;
+    pick.children[1].textContent = g.label;
+    pick.children[2].textContent = g.ids.length + (g.ids.length === 1 ? ' inbox' : ' inboxes');
+    pick.addEventListener('click', () => {
+      closeRunPicker();
+      playMacro(id, g.ids);
+    });
+    list.appendChild(pick);
+  }
+  $('#runModal').classList.remove('hidden');
+}
+function closeRunPicker() {
+  $('#runModal').classList.add('hidden');
+}
+$$('[data-close-run]').forEach((el) => el.addEventListener('click', closeRunPicker));
+
+// Same in-place editing as a nickname: Enter or blur saves, Escape backs out.
+function editMacroName(tr, id) {
+  const span = tr.querySelector('.macro-name');
+  if (!span) return;
+  const before = span.textContent;
+  const input = document.createElement('input');
+  input.className = 'nick-edit';
+  input.value = before;
+  input.maxLength = 60;
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const finish = async (save) => {
+    if (settled) return;
+    settled = true;
+    const wanted = input.value.trim();
+    if (!save || !wanted || wanted === before) return renderMacros();
+    try {
+      const r = await api.macros.rename(id, wanted);
+      const m = macros.list.find((x) => x.id === id);
+      if (m) m.name = r.name;
+      toast('Renamed');
+    } catch (err) {
+      toast(err.message || 'Rename failed', false);
+    }
+    renderMacros();
+  };
+
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') finish(true);
+    else if (ev.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+async function deleteMacro(id) {
+  const m = macros.list.find((x) => x.id === id);
+  if (!m || !(await askConfirm(`Delete the macro “${m.name}”?`))) return;
+  try {
+    await api.macros.remove(id);
+    await loadMacros();
+    toast('Deleted');
+  } catch {
+    toast('Delete failed', false);
+  }
+}
+
+$('#macroRows').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr');
+  if (!tr) return;
+  const id = tr.dataset.id;
+  if (e.target.closest('.edit-macro')) return editMacroName(tr, id);
+  if (e.target.closest('.play-macro')) return playMacro(id);
+  if (e.target.closest('.run-macro')) return openRunPicker(id);
+  if (e.target.closest('.del-macro')) return deleteMacro(id);
+});
+$$('#recBtn, #bwRecord, #macroRecord').forEach((b) => b.addEventListener('click', startRecording));
+$('#recStop').addEventListener('click', () => {
+  if (macros.mode === 'recording') return stopRecording();
+  stopPlayback();
+});
+
+if (IS_APP && api.macros) {
+  ['#navMacros', '#recBtn', '#bwRecord'].forEach((sel) => $(sel).classList.remove('hidden'));
+
+  api.macros.onProgress((p) => {
+    if (macros.mode !== 'playing') return;
+    $('#recTime').textContent = fmtDuration(p.t) + ' / ' + fmtDuration(p.duration);
+    $('#recProgress').style.width = (p.total ? (100 * p.index) / p.total : 0) + '%';
+  });
+
+  // Replayed input doesn't move the real pointer, so show where it goes.
+  api.macros.onCursor((c) => {
+    if (macros.mode !== 'playing') return;
+    let { x, y } = c;
+    if (c.target === 'browser') {
+      if (!bwWebview) return;
+      const r = bwWebview.getBoundingClientRect();
+      x += r.left;
+      y += r.top;
+    }
+    const el = $('#recCursor');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.classList.toggle('down', !!c.down);
+    el.classList.remove('hidden');
+  });
+}
+
 // ---------- settings + theme ----------
 const THEMES = ['system', 'light', 'dark'];
 function applyTheme(theme) {
@@ -1143,6 +1516,7 @@ async function loadSettings() {
     $('#ownDomain').value = s.domain || '';
     $('#mailApi').value = s.mailApi || '';
     $('#mailToken').value = s.mailToken || '';
+    $('#duckToken').value = s.duckToken || '';
     $('#throttle').value = s.throttleMs || 500;
     $('#torEnabled').checked = !!s.torEnabled;
     $('#torPath').value = s.torPath || '';
@@ -1158,9 +1532,10 @@ async function loadSettings() {
   refreshTorStatus();
   warmTor();
 }
-// The own-domain fields are noise unless that provider is selected.
+// The own-domain and Duck fields are noise unless that provider is selected.
 function updateProviderVisibility() {
   $('#domainFields').classList.toggle('hidden', $('#provider').value !== 'domain');
+  $('#duckFields').classList.toggle('hidden', $('#provider').value !== 'duckduckgo');
 }
 $('#provider').addEventListener('change', updateProviderVisibility);
 
@@ -1242,6 +1617,7 @@ $('#saveSettings').addEventListener('click', async () => {
       domain: $('#ownDomain').value,
       mailApi: $('#mailApi').value,
       mailToken: $('#mailToken').value,
+      duckToken: $('#duckToken').value,
       throttleMs: $('#throttle').value,
       torEnabled: $('#torEnabled').checked,
       torPath: $('#torPath').value,
@@ -1322,6 +1698,7 @@ async function refreshTransports() {
 // ---------- init ----------
 (async function init() {
   await Promise.all([loadIdentities(), loadSettings(), loadDomains()]);
+  await loadMacros(); // after the identities: the list names the inbox each one starts in
 })();
 
 // Marker so a smoke test can confirm this script attached all listeners without throwing.

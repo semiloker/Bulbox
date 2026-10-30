@@ -116,7 +116,7 @@ async function handleGenerate(req, res, q) {
     const assigned = mail.assignsAddresses(conf);
     const pool = assigned ? [] : domain ? [domain] : await mail.getDomains(conf);
     if (!assigned && !pool.length) throw new Error(noDomainMessage(provider));
-    const throttleMs = assigned
+    const throttleMs = provider === '5minmail'
       ? 5200 // 5minmail allows one new address every 5 seconds
       : provider === 'domain'
         ? 0 // a catch-all domain accepts every address offline: nothing to rate-limit
@@ -160,6 +160,7 @@ async function handleGenerate(req, res, q) {
           break;
         } catch (err) {
           lastErr = err;
+          if (err.fatal) throw err; // bad token / rate limited -> retrying can't help
           if (err.status === 422) continue; // taken/invalid -> new local part
           await sleep(600 * (attempt + 1)); // transient -> back off and retry
         }
@@ -354,6 +355,7 @@ const server = http.createServer(async (req, res) => {
       if (body.domain !== undefined) patch.domain = String(body.domain || '').trim().toLowerCase();
       if (body.mailApi !== undefined) patch.mailApi = String(body.mailApi || '').trim();
       if (body.mailToken !== undefined) patch.mailToken = String(body.mailToken || '').trim();
+      if (body.duckToken !== undefined) patch.duckToken = String(body.duckToken || '').trim();
       return sendJson(res, 200, await db.updateSettings(patch));
     }
 

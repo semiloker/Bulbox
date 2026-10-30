@@ -1,6 +1,6 @@
 {
   "name": "bulbox",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "description": "Desktop app to generate and manage 100+ real email inboxes (handle + address + password), each with its own isolated in-app browser session and Tor exit IP.",
@@ -12,7 +12,7 @@
   "scripts": {
     "start": "electron .",
     "web": "node server.js",
-    "test": "node test/generate.test.js && node test/db.test.js && node test/providers.test.js && node test/categories.test.js",
+    "test": "node test/generate.test.js && node test/db.test.js && node test/providers.test.js && node test/categories.test.js && node test/macros.test.js",
     "dist": "electron-builder --win",
     "dist:dir": "electron-builder --win --dir",
     "icon": "electron scripts/make-icon.cjs"

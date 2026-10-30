@@ -2,7 +2,7 @@
 // Wires the framework-agnostic lib modules (db, generate, providers) to IPC handlers,
 // and opens a persistent, isolated Chromium window per email.
 
-const { app, BrowserWindow, ipcMain, dialog, session, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, webContents } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -95,13 +95,14 @@ const bridgeArg = (s) => (s && s.torBridgeMode === 'bridges' ? s.torBridges || '
 let libs = null;
 async function loadLibs() {
   if (libs) return libs;
-  const [db, generate, mail, tor] = await Promise.all([
+  const [db, generate, mail, tor, macros] = await Promise.all([
     import(pathToFileURL(path.join(ROOT, 'lib', 'db.js')).href),
     import(pathToFileURL(path.join(ROOT, 'lib', 'generate.js')).href),
     import(pathToFileURL(path.join(ROOT, 'providers', 'index.js')).href),
     import(pathToFileURL(path.join(ROOT, 'lib', 'tor.js')).href),
+    import(pathToFileURL(path.join(ROOT, 'lib', 'macros.js')).href),
   ]);
-  libs = { db, generate, mail, tor };
+  libs = { db, generate, mail, tor, macros };
   return libs;
 }
 
@@ -132,9 +133,51 @@ function createMainWindow() {
     });
     mainWindow.webContents.on('preload-error', (_e, p, err) => smokeConsole.push({ preloadError: String(err) }));
   }
+  // A native alert()/confirm() box — sites in the browser panel can open one —
+  // leaves Chromium on Windows unable to take typed text once it closes: keys
+  // still arrive, characters never get inserted, until focus leaves the window
+  // and comes back. Focusing the page again doesn't help, and Chromium still
+  // reports it focused; only the page itself knows. So when the window comes
+  // back and neither the app nor the panel's page has focus, bounce it once.
+  let lastBounce = 0;
+  mainWindow.on('focus', () => {
+    if (Date.now() - lastBounce < 3000) return; // our own bounce comes back through here
+    setTimeout(async () => {
+      if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isFocused()) return;
+      const hasFocus = async (run) => {
+        try {
+          return (await run()) !== false;
+        } catch {
+          return true; // can't tell: leave it alone
+        }
+      };
+      if (await hasFocus(() => mainWindow.webContents.executeJavaScript('document.hasFocus()'))) return;
+      const guest = panelGuest;
+      if (
+        guest &&
+        !guest.isDestroyed() &&
+        (await hasFocus(() => guest.executeJavaScriptInIsolatedWorld(999, [{ code: 'document.hasFocus()' }])))
+      ) {
+        return;
+      }
+      lastBounce = Date.now();
+      mainWindow.blur();
+      mainWindow.focus();
+    }, 150);
+  });
+
+  // The browser panel's page — where macro events recorded in it get replayed.
+  mainWindow.webContents.on('did-attach-webview', (_e, guest) => {
+    panelGuest = guest;
+    guest.on('did-start-loading', () => panelLoads++);
+    guest.once('destroyed', () => {
+      if (panelGuest === guest) panelGuest = null;
+    });
+  });
   mainWindow.loadFile(path.join(ROOT, 'public', 'index.html'));
   mainWindow.on('closed', () => {
     mainWindow = null;
+    rec.playToken++; // a playback has nothing left to play into
   });
 }
 
@@ -223,8 +266,214 @@ async function checkForUpdate() {
   return updateState;
 }
 
+// --- macros: record & replay mouse and keyboard ------------------------------
+// The capture preload reports raw DOM input from the app window and from the
+// browser panel. It is timestamped here, so both share one clock, and replayed
+// with sendInputEvent into whichever of the two it came from. Browser panel
+// events go to the panel that is open *now*, so a recording that opens an
+// email's browser keeps working when it creates a fresh one on replay.
+const CAPTURE_PRELOAD = path.join(__dirname, 'capture-preload.cjs');
+const LOAD_WAIT_MS = 15000;
+
+const rec = {
+  mode: 'idle', // 'recording' | 'playing'
+  events: [],
+  started: 0,
+  context: null,
+  viewport: null,
+  playToken: 0,
+  injecting: false, // true while sendInputEvent runs, so real keys can be told apart
+};
+let panelGuest = null; // the window hosts one browser panel at a time
+let panelLoads = 0;
+
+function sourceOf(sender) {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  if (sender === mainWindow.webContents) return 'app';
+  if (sender.getType() === 'webview' && sender.hostWebContents === mainWindow.webContents) return 'browser';
+  return null;
+}
+
+function tellRecording(on) {
+  for (const wc of webContents.getAllWebContents()) {
+    if (sourceOf(wc)) wc.send('rec:recording', on);
+  }
+}
+
+function inject(wc, input) {
+  rec.injecting = true;
+  try {
+    wc.sendInputEvent(input);
+  } catch {
+    /* the page went away mid-event */
+  } finally {
+    rec.injecting = false;
+  }
+}
+
+// App coordinates only land on the same buttons at the same window size and zoom.
+async function matchViewport(vp) {
+  if (!vp || !mainWindow || mainWindow.isFullScreen()) return;
+  let changed = false;
+  if (vp.zoom && mainWindow.webContents.getZoomFactor() !== vp.zoom) {
+    mainWindow.webContents.setZoomFactor(vp.zoom);
+    changed = true;
+  }
+  if (vp.maximized) {
+    if (!mainWindow.isMaximized()) {
+      mainWindow.maximize();
+      changed = true;
+    }
+  } else {
+    const [w, h] = mainWindow.getContentSize();
+    if (w !== vp.width || h !== vp.height) {
+      if (mainWindow.isMaximized()) mainWindow.unmaximize();
+      mainWindow.setContentSize(vp.width, vp.height);
+      changed = true;
+    }
+  }
+  if (changed) await sleep(400); // let the layout settle before the first click
+}
+
+async function playMacro(macro, speed) {
+  const token = ++rec.playToken;
+  const live = () => token === rec.playToken && !!mainWindow && !mainWindow.isDestroyed();
+  const events = Array.isArray(macro.events) ? macro.events : [];
+  const total = events.length;
+  const stopped = (i) => ({ completed: false, played: i, total });
+
+  await matchViewport(macro.viewport);
+  const appContents = mainWindow.webContents;
+  const start = performance.now();
+  let shift = 0; // time spent waiting on page loads, pushed onto the rest of the timeline
+  let lastTick = 0;
+  let gaveUpOn = null;
+
+  // Browser panel events wait for a panel to exist and — unless they were
+  // recorded mid-load too — for its page to finish loading. Load times through
+  // Tor vary far more than any recording can anticipate. A page that never
+  // settles is waited on once per navigation, not once per event.
+  // No panel at all is given up on the same way, until one opens.
+  const waitForPanel = async (ev) => {
+    const key = () => (panelGuest && !panelGuest.isDestroyed() ? `${panelGuest.id}:${panelLoads}` : 'none');
+    const ready = () =>
+      gaveUpOn === key() ||
+      (key() !== 'none' && (ev.loading || !panelGuest.isLoading()));
+    const began = performance.now();
+    while (!ready() && live() && performance.now() - began < LOAD_WAIT_MS) await sleep(100);
+    if (!ready()) gaveUpOn = key();
+    return performance.now() - began;
+  };
+
+  for (let i = 0; i < total; i++) {
+    if (!live()) return stopped(i);
+    const { t, target, loading, ...input } = events[i];
+    const wait = start + shift + t / speed - performance.now();
+    if (wait > 0) await sleep(wait);
+    if (!live()) return stopped(i);
+
+    let into = appContents;
+    if (target === 'browser') {
+      shift += await waitForPanel({ loading });
+      if (!live()) return stopped(i);
+      if (!panelGuest || panelGuest.isDestroyed()) continue;
+      into = panelGuest;
+    }
+    inject(into, input);
+
+    if (input.type.startsWith('mouse')) {
+      appContents.send('rec:cursor', { target, x: input.x, y: input.y, down: input.type === 'mouseDown' });
+    }
+    const now = performance.now();
+    if (now - lastTick > 200 || i === total - 1) {
+      lastTick = now;
+      appContents.send('rec:progress', { index: i + 1, total, t, duration: macro.duration || 0 });
+    }
+  }
+  return { completed: true, played: total, total };
+}
+
 function registerIpc() {
   ipcMain.handle('db:list', async () => (await loadLibs()).db.read());
+
+  // --- macros ---
+  ipcMain.handle('rec:recording', async () => rec.mode === 'recording');
+
+  ipcMain.on('rec:event', (e, raw) => {
+    if (rec.mode !== 'recording') return;
+    const target = sourceOf(e.sender);
+    if (!target) return;
+    const t = Math.round(performance.now() - rec.started);
+    // Input given while the page was still loading must not wait for it on replay.
+    const loading = target === 'browser' && e.sender.isLoading();
+    for (const input of libs.macros.toInputEvents(raw)) {
+      rec.events.push(loading ? { t, target, loading, ...input } : { t, target, ...input });
+    }
+  });
+
+  ipcMain.handle('macros:list', async () => (await loadLibs()).macros.list());
+
+  ipcMain.handle('macros:record', async (_e, context = {}) => {
+    if (rec.mode !== 'idle') {
+      throw new Error(rec.mode === 'playing' ? 'Stop the macro that is playing first.' : 'Already recording.');
+    }
+    const [width, height] = mainWindow.getContentSize();
+    rec.mode = 'recording';
+    rec.events = [];
+    rec.started = performance.now();
+    rec.context = {
+      view: String(context.view || 'identities'),
+      mailId: context.mailId ? String(context.mailId) : null,
+      browserId: context.browserId ? String(context.browserId) : null,
+      browserUrl: context.browserUrl ? String(context.browserUrl) : null,
+    };
+    rec.viewport = {
+      width,
+      height,
+      maximized: mainWindow.isMaximized(),
+      zoom: mainWindow.webContents.getZoomFactor(),
+    };
+    tellRecording(true);
+    return { recording: true };
+  });
+
+  // Saves what was recorded and returns it, or null when there was nothing to keep.
+  ipcMain.handle('macros:stop-record', async () => {
+    if (rec.mode !== 'recording') return null;
+    rec.mode = 'idle';
+    tellRecording(false);
+    const { macros } = await loadLibs();
+    const events = macros.trimTrailingMoves(rec.events);
+    rec.events = [];
+    if (!events.length) return null;
+    const t0 = events[0].t; // replay starts with the first action, not the pause before it
+    for (const ev of events) ev.t -= t0;
+    return macros.save({ events, context: rec.context, viewport: rec.viewport });
+  });
+
+  // Resolves when the playback ends, either way.
+  ipcMain.handle('macros:play', async (_e, { id, speed } = {}) => {
+    if (rec.mode !== 'idle') {
+      throw new Error(rec.mode === 'recording' ? 'Stop recording first.' : 'A macro is already playing.');
+    }
+    const macro = await (await loadLibs()).macros.get(id);
+    if (!macro) throw new Error('No such macro.');
+    rec.mode = 'playing';
+    try {
+      return await playMacro(macro, clamp(Number(speed) || 1, 0.25, 8));
+    } finally {
+      rec.mode = 'idle';
+    }
+  });
+
+  ipcMain.handle('macros:stop', async () => {
+    rec.playToken++;
+    return { stopped: true };
+  });
+
+  ipcMain.handle('macros:rename', async (_e, { id, name } = {}) => (await loadLibs()).macros.rename(id, name));
+
+  ipcMain.handle('macros:delete', async (_e, id) => (await loadLibs()).macros.remove(id));
 
   ipcMain.handle('settings:get', async () => (await loadLibs()).db.getSettings());
 
@@ -258,6 +507,7 @@ function registerIpc() {
     if (patch.domain !== undefined) p.domain = String(patch.domain || '').trim().toLowerCase();
     if (patch.mailApi !== undefined) p.mailApi = String(patch.mailApi || '').trim();
     if (patch.mailToken !== undefined) p.mailToken = String(patch.mailToken || '').trim();
+    if (patch.duckToken !== undefined) p.duckToken = String(patch.duckToken || '').trim();
     if (typeof patch.torEnabled === 'boolean') p.torEnabled = patch.torEnabled;
     if (patch.torPath !== undefined) p.torPath = String(patch.torPath || '');
     if (patch.torBridgeMode) p.torBridgeMode = patch.torBridgeMode === 'bridges' ? 'bridges' : 'none';
@@ -353,7 +603,7 @@ function registerIpc() {
           : `${provider} has no domains available right now. Try again shortly.`
       );
     }
-    const throttleMs = assigned
+    const throttleMs = provider === '5minmail'
       ? 5200 // 5minmail allows one new address every 5 seconds
       : provider === 'domain'
         ? 0 // a catch-all domain accepts every address offline: nothing to rate-limit
@@ -398,6 +648,7 @@ function registerIpc() {
           break;
         } catch (err) {
           lastErr = err;
+          if (err.fatal) throw err;
           if (err.status === 422) continue;
           await sleep(600 * (attempt + 1));
         }
@@ -563,9 +814,26 @@ function registerIpc() {
   });
 }
 
-// Make target=_blank / window.open inside a per-email webview load in place,
-// instead of spawning stray blank windows.
 app.on('web-contents-created', (_e, contents) => {
+  // Every email's browser panel gets the input-capture preload, so macros can
+  // record inside it. It exposes nothing to the page.
+  contents.on('will-attach-webview', (_ev, webPreferences) => {
+    webPreferences.preload = CAPTURE_PRELOAD;
+  });
+
+  // Escape stops a playing macro; every other key goes through as usual.
+  // Replayed keys are ignored here: they arrive synchronously from inject(),
+  // with rec.injecting set, so a recorded Escape doesn't stop its own replay.
+  contents.on('before-input-event', (event, input) => {
+    if (rec.mode !== 'playing' || rec.injecting) return;
+    if (input.type === 'keyDown' && input.key === 'Escape') {
+      rec.playToken++;
+      event.preventDefault();
+    }
+  });
+
+  // Make target=_blank / window.open inside a per-email webview load in place,
+  // instead of spawning stray blank windows.
   if (contents.getType() === 'webview') {
     try {
       // Don't leak the real IP over WebRTC when routed through Tor/proxy.
@@ -654,6 +922,9 @@ app.whenReady().then(async () => {
   // setApplicationMenu(null) silently kills copy & paste everywhere in the app,
   // including inside each email's browser panel.
   Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'editMenu' }, { role: 'viewMenu' }]));
+  // The app window already has its own preload; the capture one rides along at
+  // the session level (the browser panels get it per webview, above).
+  session.defaultSession.setPreloads([CAPTURE_PRELOAD]);
   await loadLibs();
   await libs.db.ensure();
   registerIpc();
